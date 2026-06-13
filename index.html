@@ -1022,7 +1022,7 @@
     </div>
 
     <!-- Shift info for selected period -->
-    <div id="shift-info-bar" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;font-size:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"></div>
+    <div id="shift-info-bar" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;font-size:12px;align-items:center;gap:12px;flex-wrap:wrap"></div>
 
     <div class="stat-grid" id="stat-grid"></div>
 
@@ -1870,20 +1870,29 @@ async function loadTransactionsFromDB() {
     .select('*').order('created_at', { ascending: false }).limit(50);
   if (error) { console.error('Transactions load error:', error); return; }
   if (data) {
-    transactions = data.map(r => ({
-      id: r.order_number, table: r.table_name,
-      items: r.items_summary, method: r.payment_method,
-      total: r.total,
-      subtotal: r.subtotal || r.total,
-      tax: r.tax || 0,
-      discount: r.discount_amount || 0,
-      discountName: r.discount_name || '',
-      note: r.note || '',
-      itemsDetail: r.items_detail || null,
-      time: new Date(r.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),
-      date: new Date(r.created_at).toISOString().split('T')[0],
-      timestamp: r.created_at,
-    }));
+    transactions = data.map(r => {
+      const d = new Date(r.created_at);
+      // getFullYear/Month/Date pakai timezone lokal browser (bukan UTC)
+      const dateStr = d.getFullYear() + '-' +
+        String(d.getMonth()+1).padStart(2,'0') + '-' +
+        String(d.getDate()).padStart(2,'0');
+      const timeStr = String(d.getHours()).padStart(2,'0') + ':' +
+        String(d.getMinutes()).padStart(2,'0');
+      return {
+        id: r.order_number, table: r.table_name,
+        items: r.items_summary, method: r.payment_method,
+        total: r.total,
+        subtotal: r.subtotal || r.total,
+        tax: r.tax || 0,
+        discount: r.discount_amount || 0,
+        discountName: r.discount_name || '',
+        note: r.note || '',
+        itemsDetail: r.items_detail || null,
+        time: timeStr,
+        date: dateStr,
+        timestamp: r.created_at,
+      };
+    });
   }
 }
 
@@ -2012,6 +2021,19 @@ async function dbDeleteDiscount(id) {
   if (error) console.error('Delete discount error:', error);
 }
 
+// Helper: tanggal lokal (bukan UTC) — fix timezone issue
+function localDateStr(date) {
+  const d = date || new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function localMonthStr(date) {
+  const d = date || new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
 function updateClock() {
   const now = new Date();
   document.getElementById('clock').textContent =
@@ -2032,7 +2054,7 @@ function switchView(name) {
   if (name === 'settings') { showSettingsPanel('menu'); renderMenuMgmt(); }
   if (name === 'shift') renderShiftView();
   if (name === 'expenses') {
-    document.getElementById('expense-date-filter').value = new Date().toISOString().split('T')[0];
+    document.getElementById('expense-date-filter').value = localDateStr();
     renderExpenses();
   }
 }
@@ -2500,7 +2522,7 @@ async function finishOrder(method) {
     discountName: activeDiscountId ? (DISCOUNTS.find(d => d.id === activeDiscountId)?.name || '') : '',
     note: note,
     time: now.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }),
-    date: now.toISOString().split('T')[0],
+    date: localDateStr(now),
     timestamp: now.toISOString(),
   };
   transactions.unshift(txn);
@@ -2593,16 +2615,16 @@ function onPeriodChange() {
 
 function getFilteredTransactions() {
   const period = document.getElementById('report-period').value;
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateStr();
 
   if (period === 'today') return transactions.filter(t => t.date === todayStr);
   if (period === 'week') {
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+    const weekAgoStr = localDateStr(weekAgo);
     return transactions.filter(t => t.date >= weekAgoStr);
   }
   if (period === 'month') {
-    const monthStr = new Date().toISOString().slice(0, 7);
+    const monthStr = localMonthStr();
     return transactions.filter(t => t.date && t.date.startsWith(monthStr));
   }
   if (period === 'custom') {
@@ -2656,10 +2678,10 @@ function renderReports() {
   const shiftBar = document.getElementById('shift-info-bar');
   if (allShifts.length) {
     // Tentukan date range yang sedang dilihat
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = localDateStr();
     let fromStr = todayStr, toStr = todayStr;
-    if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromStr = d.toISOString().split('T')[0]; toStr = todayStr; }
-    else if (period === 'month') { fromStr = new Date().toISOString().slice(0,7) + '-01'; toStr = todayStr; }
+    if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromStr = localDateStr(d); toStr = todayStr; }
+    else if (period === 'month') { const d = new Date(); fromStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; toStr = todayStr; }
     else if (period === 'custom') { fromStr = document.getElementById('date-from').value || todayStr; toStr = document.getElementById('date-to').value || todayStr; }
 
     // Filter shift yang overlap dengan periode
@@ -2670,12 +2692,12 @@ function renderReports() {
 
     if (relevantShifts.length) {
       shiftBar.style.display = 'flex';
-      shiftBar.innerHTML = '<span style="color:var(--text-dim);font-weight:700">Kasir:</span>' +
+      shiftBar.innerHTML = '<span style="color:var(--text-dim);font-weight:700;margin-right:4px">Kasir bertugas:</span>' +
         relevantShifts.map(s => {
           const tgl = new Date(s.opened_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'});
           const statusColor = s.status === 'open' ? 'var(--green)' : 'var(--text-dim)';
-          return `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;display:flex;align-items:center;gap:5px">
-            <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};flex-shrink:0"></span>
+          return `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;display:inline-flex;align-items:center;gap:5px">
+            <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};flex-shrink:0;display:inline-block"></span>
             <strong>${s.kasir_name}</strong> <span style="color:var(--text-dim)">${tgl}</span>
           </span>`;
         }).join('');
@@ -2703,7 +2725,7 @@ function renderReports() {
   const chartData = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = localDateStr(d);
     const rev = transactions.filter(t => t.date === dateStr).reduce((s, t) => s + t.total, 0);
     chartData.push({ label: days[d.getDay()], rev, isToday: i === 0 });
   }
@@ -2805,7 +2827,7 @@ function exportReport(type) {
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'sematakata-laporan-' + period + '-' + new Date().toISOString().split('T')[0] + '.csv';
+    a.download = 'sematakata-laporan-' + period + '-' + localDateStr() + '.csv';
     a.click();
     showToast('Excel berhasil didownload', 'success');
     return;
@@ -3674,7 +3696,7 @@ async function deleteExpense(id) {
 
 async function renderExpenses() {
   const dateInput = document.getElementById('expense-date-filter');
-  if (!dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+  if (!dateInput.value) dateInput.value = localDateStr();
   const dateStr = dateInput.value;
 
   await loadExpensesFromDB(dateStr);
