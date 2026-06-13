@@ -925,7 +925,15 @@
         <option value="week">7 hari terakhir</option>
         <option value="month">Bulan ini</option>
       </select>
-      <button class="k-btn" style="width:auto;padding:6px 14px" onclick="exportReport()">Export PDF</button>
+      <div style="position:relative;display:inline-block" id="download-wrap">
+        <button class="add-menu-btn" onclick="toggleDownloadMenu()" style="font-size:12px;padding:7px 16px">
+          Download Report ▾
+        </button>
+        <div id="download-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;z-index:200;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+          <button onclick="exportReport('pdf')" style="display:block;width:100%;padding:10px 16px;background:none;border:none;color:var(--text);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left" onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='none'">Download PDF</button>
+          <button onclick="exportReport('excel')" style="display:block;width:100%;padding:10px 16px;background:none;border:none;color:var(--text);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left" onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='none'">Download Excel</button>
+        </div>
+      </div>
     </div>
 
     <div class="stat-grid" id="stat-grid"></div>
@@ -1369,14 +1377,10 @@
       <div class="s-field">
         <div class="s-label">Status</div>
         <select class="s-input" id="edit-avail">
-          <option value="true"> Tersedia</option>
-          <option value="false"> Habis</option>
+          <option value="true">Tersedia</option>
+          <option value="false">Habis</option>
         </select>
       </div>
-    </div>
-    <div class="s-field">
-      <div class="s-label">Ikon</div>
-      <div class="emoji-picker" id="emoji-picker"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="confirm-btn" style="background:var(--amber);color:#1A0F00" onclick="saveMenuItem()">Simpan Menu</button>
@@ -2335,240 +2339,268 @@ function updateKitchenTimers() { renderKitchen(); }
 // ═══════════════════════════════════════════════
 //  REPORTS
 // ═══════════════════════════════════════════════
-function renderReports() {
-  const statGrid = document.getElementById('stat-grid');
+function getFilteredTransactions() {
+  const period = document.getElementById('report-period').value;
   const todayStr = new Date().toISOString().split('T')[0];
-  const today = transactions.filter(t => t.date === todayStr);
-  const todayRev = today.reduce((s, t) => s + t.total, 0);
-  const totalOrders = today.length;
-  const avgOrder = totalOrders ? Math.round(todayRev / totalOrders) : 0;
-  const totalItems = today.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
+  if (period === 'today') return transactions.filter(t => t.date === todayStr);
+  if (period === 'week') {
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+    return transactions.filter(t => new Date(t.date) >= weekAgo);
+  }
+  if (period === 'month') {
+    const monthStr = new Date().toISOString().slice(0, 7);
+    return transactions.filter(t => t.date && t.date.startsWith(monthStr));
+  }
+  return transactions;
+}
 
-  statGrid.innerHTML = [
-    { label:'Pendapatan Hari Ini', val: fmt(todayRev), sub: `${totalOrders} transaksi` },
-    { label:'Rata-rata Nilai Order', val: fmt(avgOrder), sub:'per transaksi' },
-    { label:'Total Transaksi', val: transactions.length, sub:'all time' },
-    { label:'Menu Terjual', val: totalItems, sub:'item hari ini' },
-  ].map(s => `
-    <div class="stat-card">
-      <div class="s-label">${s.label}</div>
-      <div class="s-val">${s.val}</div>
-      <div class="s-sub">${s.sub}</div>
-    </div>
-  `).join('');
+function calcProfitData(filtered) {
+  const totalRevenue = filtered.reduce((s, t) => s + t.total, 0);
+  const totalDiscount = filtered.reduce((s, t) => s + (t.discount || 0), 0);
+  const totalTax = filtered.reduce((s, t) => s + (t.tax || 0), 0);
+  let totalHPP = 0, hppAvailable = false;
+  filtered.forEach(t => {
+    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
+      t.itemsDetail.forEach(i => {
+        const m = MENU.find(x => x.name === i.name);
+        if (m && m.hpp > 0) { totalHPP += m.hpp * i.qty; hppAvailable = true; }
+      });
+    }
+  });
+  const omsetKotor = totalRevenue;
+  const omsetBersih = hppAvailable ? totalRevenue - totalHPP - totalTax : null;
+  const grossMargin = omsetKotor > 0 && hppAvailable ? Math.round((omsetKotor - totalHPP) / omsetKotor * 100) : null;
+  return { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin };
+}
 
-  // Chart — 7 hari terakhir dari transaksi real
+function toggleDownloadMenu() {
+  const m = document.getElementById('download-menu');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('download-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const m = document.getElementById('download-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+
+function renderReports() {
+  const filtered = getFilteredTransactions();
+  const { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin } = calcProfitData(filtered);
+  const avgOrder = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
+  const totalItems = filtered.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
+
+  document.getElementById('stat-grid').innerHTML = [
+    { label:'Omset Kotor', val: fmt(omsetKotor), sub: filtered.length + ' transaksi' },
+    { label:'Omset Bersih', val: hppAvailable ? fmt(omsetBersih) : '—', sub: hppAvailable ? 'Setelah HPP & Pajak' : 'Isi HPP di menu' },
+    { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) : 'Isi HPP di menu' },
+    { label:'Rata-rata Order', val: fmt(avgOrder), sub: 'per transaksi' },
+    { label:'Total Diskon', val: fmt(totalDiscount), sub: 'diberikan' },
+    { label:'Item Terjual', val: totalItems, sub: 'total item' },
+  ].map(s => '<div class="stat-card"><div class="s-label">' + s.label + '</div><div class="s-val">' + s.val + '</div><div class="s-sub">' + s.sub + '</div></div>').join('');
+
+  // Chart 7 hari
   const days = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
   const chartData = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+    const d = new Date(); d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const dayName = days[d.getDay()];
     const rev = transactions.filter(t => t.date === dateStr).reduce((s, t) => s + t.total, 0);
-    chartData.push({ label: dayName, rev, isToday: i === 0 });
+    chartData.push({ label: days[d.getDay()], rev, isToday: i === 0 });
   }
   const maxRev = Math.max(...chartData.map(d => d.rev), 1);
-  document.getElementById('sales-chart').innerHTML = chartData.map(d => `
-    <div class="bar-wrap">
-      <div class="bar-val">${d.rev >= 1000 ? Math.round(d.rev/1000)+'k' : d.rev || ''}</div>
-      <div class="bar ${d.isToday ? 'today' : ''}" style="height:${Math.round((d.rev/maxRev)*80)+4}px"></div>
-      <div class="bar-label">${d.label}</div>
-    </div>
-  `).join('');
+  document.getElementById('sales-chart').innerHTML = chartData.map(d =>
+    '<div class="bar-wrap"><div class="bar-val">' + (d.rev >= 1000 ? Math.round(d.rev/1000)+'k' : (d.rev||'')) + '</div>' +
+    '<div class="bar ' + (d.isToday ? 'today' : '') + '" style="height:' + (Math.round((d.rev/maxRev)*80)+4) + 'px"></div>' +
+    '<div class="bar-label">' + d.label + '</div></div>'
+  ).join('');
 
-  // Top items — hitung dari semua transaksi real
+  // Top items dari filtered
   const itemCount = {};
-  transactions.forEach(t => {
+  filtered.forEach(t => {
     if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
-      t.itemsDetail.forEach(i => {
-        itemCount[i.name] = (itemCount[i.name] || 0) + i.qty;
-      });
+      t.itemsDetail.forEach(i => { itemCount[i.name] = (itemCount[i.name]||0) + i.qty; });
     } else if (t.items) {
       t.items.split(', ').forEach(s => {
         const match = s.match(/^(.+) x(\d+)$/);
-        if (match) itemCount[match[1]] = (itemCount[match[1]] || 0) + parseInt(match[2]);
+        if (match) itemCount[match[1]] = (itemCount[match[1]]||0) + parseInt(match[2]);
       });
     }
   });
-  const topData = Object.entries(itemCount)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+  const topData = Object.entries(itemCount).sort((a,b) => b[1]-a[1]).slice(0,5);
   const maxCount = topData[0]?.[1] || 1;
   document.getElementById('top-items').innerHTML = topData.length
-    ? topData.map(([name, count], i) => `
-      <div class="top-item">
-        <div class="rank">${i+1}</div>
-        <div class="t-bar-wrap">
-          <div class="t-item-name">${name}</div>
-          <div class="t-bar-bg"><div class="t-bar-fill" style="width:${Math.round(count/maxCount*100)}%"></div></div>
-        </div>
-        <div class="t-count">${count}</div>
-      </div>`).join('')
-    : '<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Belum ada data transaksi</div>';
+    ? topData.map(([name, count], i) =>
+        '<div class="top-item"><div class="rank">' + (i+1) + '</div><div class="t-bar-wrap">' +
+        '<div class="t-item-name">' + name + '</div>' +
+        '<div class="t-bar-bg"><div class="t-bar-fill" style="width:' + Math.round(count/maxCount*100) + '%"></div></div>' +
+        '</div><div class="t-count">' + count + '</div></div>'
+      ).join('')
+    : '<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Belum ada data</div>';
 
-  // Transactions table
   const methodPills = { cash:'cash', tunai:'cash', qris:'qris', gopay:'gopay', ovo:'ovo', dana:'gopay', transfer:'blue' };
-  document.getElementById('txn-tbody').innerHTML = transactions.slice(0, 15).map(t => `
-    <tr onclick="showTxnDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
-      <td class="mono" style="font-weight:700;color:var(--amber)">${t.id}</td>
-      <td>${t.table}</td>
-      <td style="color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.items}</td>
-      <td><span class="pill ${methodPills[t.method] || 'cash'}">${t.method.toUpperCase()}</span></td>
-      <td style="font-size:11px;color:var(--green)">${t.discountName || '-'}</td>
-      <td class="mono" style="font-weight:700">${fmt(t.total)}</td>
-      <td style="color:var(--text-dim)">${t.time}</td>
-    </tr>
-  `).join('');
+  document.getElementById('txn-tbody').innerHTML = filtered.slice(0, 20).map(t =>
+    '<tr onclick="showTxnDetail(\'' + t.id + '\')" style="cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">' +
+    '<td class="mono" style="font-weight:700;color:var(--amber)">' + t.id + '</td>' +
+    '<td>' + t.table + '</td>' +
+    '<td style="color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.items + '</td>' +
+    '<td><span class="pill ' + (methodPills[t.method]||'cash') + '">' + t.method.toUpperCase() + '</span></td>' +
+    '<td style="font-size:11px;color:var(--green)">' + (t.discountName||'-') + '</td>' +
+    '<td class="mono" style="font-weight:700">' + fmt(t.total) + '</td>' +
+    '<td style="color:var(--text-dim)">' + t.time + '</td></tr>'
+  ).join('');
 }
 
-function updateMarginPreview() {
-  const price = parseInt(document.getElementById('edit-price').value) || 0;
-  const hpp = parseInt(document.getElementById('edit-hpp').value) || 0;
-  const el = document.getElementById('margin-preview');
-  if (!price || !hpp) { el.textContent = '—'; el.style.color = 'var(--text-dim)'; return; }
-  const profit = price - hpp;
-  const margin = Math.round(profit / price * 100);
-  el.textContent = `${margin}% (${fmt(profit)})`;
-  el.style.color = profit > 0 ? 'var(--green)' : 'var(--red)';
-}
-
-function exportReport() {
-  const todayStr = new Date().toISOString().split('T')[0];
+function exportReport(type) {
+  document.getElementById('download-menu').style.display = 'none';
+  const filtered = getFilteredTransactions();
+  const { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin } = calcProfitData(filtered);
   const period = document.getElementById('report-period').value;
+  const periodLabel = period === 'today' ? 'Hari Ini' : period === 'week' ? '7 Hari Terakhir' : 'Bulan Ini';
+  const now = new Date().toLocaleString('id-ID');
+  const avgOrder = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
 
-  // Filter transactions by period
-  let filtered = transactions;
-  if (period === 'today') {
-    filtered = transactions.filter(t => t.date === todayStr);
-  } else if (period === 'week') {
-    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-    filtered = transactions.filter(t => new Date(t.date) >= weekAgo);
-  }
-
-  // Hitung revenue & HPP
-  const totalRevenue = filtered.reduce((s, t) => s + t.total, 0);
-  const totalDiscount = filtered.reduce((s, t) => s + (t.discount || 0), 0);
-
-  // Hitung HPP dari items
-  let totalHPP = 0;
-  let hppAvailable = false;
-  filtered.forEach(t => {
-    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
-      t.itemsDetail.forEach(i => {
-        const menuItem = MENU.find(m => m.name === i.name);
-        if (menuItem && menuItem.hpp > 0) {
-          totalHPP += menuItem.hpp * i.qty;
-          hppAvailable = true;
-        }
-      });
-    }
-  });
-
-  const grossProfit = totalRevenue - totalHPP;
-  const grossMargin = totalRevenue > 0 && hppAvailable ? Math.round(grossProfit / totalRevenue * 100) : null;
-
-  // Hitung top items
   const itemCount = {};
   filtered.forEach(t => {
     if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
-      t.itemsDetail.forEach(i => { itemCount[i.name] = (itemCount[i.name] || 0) + i.qty; });
+      t.itemsDetail.forEach(i => { itemCount[i.name] = (itemCount[i.name]||0) + i.qty; });
     } else if (t.items) {
       t.items.split(', ').forEach(s => {
         const match = s.match(/^(.+) x(\d+)$/);
-        if (match) itemCount[match[1]] = (itemCount[match[1]] || 0) + parseInt(match[2]);
+        if (match) itemCount[match[1]] = (itemCount[match[1]]||0) + parseInt(match[2]);
       });
     }
   });
   const topItems = Object.entries(itemCount).sort((a,b) => b[1]-a[1]).slice(0,10);
 
-  // Build PDF HTML
-  const periodLabel = period === 'today' ? 'Hari Ini' : period === 'week' ? '7 Hari Terakhir' : 'Bulan Ini';
-  const now = new Date().toLocaleString('id-ID');
+  if (type === 'excel') {
+    // Build CSV yang bisa dibuka Excel
+    const rows = [
+      ['LAPORAN PENJUALAN SEMATA KATA'],
+      ['Periode: ' + periodLabel],
+      ['Dicetak: ' + now],
+      [],
+      ['RINGKASAN'],
+      ['Omset Kotor', omsetKotor],
+      ['Total HPP', hppAvailable ? totalHPP : 'Belum diisi'],
+      ['Total Pajak (PPN)', totalTax],
+      ['Total Diskon', totalDiscount],
+      ['Omset Bersih', hppAvailable ? omsetBersih : 'Belum bisa dihitung'],
+      ['Gross Margin', grossMargin !== null ? grossMargin + '%' : '-'],
+      ['Rata-rata Order', avgOrder],
+      ['Jumlah Transaksi', filtered.length],
+      [],
+      ['MENU TERLARIS'],
+      ['Rank', 'Menu', 'Qty Terjual', 'Estimasi Profit'],
+      ...topItems.map(([name, count], i) => {
+        const m = MENU.find(x => x.name === name);
+        const profit = m && m.hpp > 0 ? (m.price - m.hpp) * count : '-';
+        return [i+1, name, count, profit];
+      }),
+      [],
+      ['DETAIL TRANSAKSI'],
+      ['Order #', 'Meja', 'Items', 'Metode', 'Diskon', 'Nominal Diskon', 'Subtotal', 'Pajak', 'Total', 'Waktu', 'Tanggal'],
+      ...filtered.map(t => [t.id, t.table, t.items, t.method.toUpperCase(), t.discountName||'-', t.discount||0, t.subtotal||t.total, t.tax||0, t.total, t.time, t.date])
+    ];
+    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'sematakata-laporan-' + period + '-' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
+    showToast('Excel berhasil didownload', 'success');
+    return;
+  }
 
+  // PDF
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Laporan SEMATA KATA</title>
+  <title>Laporan SEMATA KATA - ${periodLabel}</title>
   <style>
-    body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 32px; max-width: 800px; margin: 0 auto; }
-    h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 15px; color: #555; margin: 0 0 20px; font-weight: normal; }
-    .meta { font-size: 11px; color: #888; margin-bottom: 28px; }
-    .stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 28px; }
-    .stat-box { border: 1px solid #ddd; border-radius: 8px; padding: 14px; }
-    .stat-box .lbl { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-    .stat-box .val { font-size: 20px; font-weight: 700; color: #111; }
-    .stat-box .sub { font-size: 11px; color: #888; margin-top: 4px; }
-    .profit-box { background: #f0faf5; border: 1.5px solid #5BAD7E; border-radius: 8px; padding: 16px; margin-bottom: 28px; }
-    .profit-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #e0e0e0; }
-    .profit-row:last-child { border-bottom: none; font-size: 15px; font-weight: 700; padding-top: 10px; margin-top: 4px; }
-    .profit-row.negative { color: #c0614a; }
-    .profit-row.positive { color: #5BAD7E; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 28px; }
-    th { text-align: left; padding: 8px 10px; background: #f5f5f5; border-bottom: 2px solid #ddd; font-size: 11px; text-transform: uppercase; }
-    td { padding: 7px 10px; border-bottom: 1px solid #eee; }
-    tr:last-child td { border-bottom: none; }
-    .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #888; margin: 24px 0 10px; }
-    .top-item-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-    .bar-bg { flex: 1; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 32px; max-width: 860px; margin: 0 auto; }
+    h1 { font-size: 24px; margin: 0 0 4px; color: #1a1a1a; }
+    h2 { font-size: 15px; color: #666; margin: 0 0 4px; font-weight: normal; }
+    .meta { font-size: 11px; color: #999; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 2px solid #f0f0f0; }
+    .stat-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+    .stat-box { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; }
+    .stat-box.highlight { background: #f0faf5; border-color: #5BAD7E; }
+    .stat-box.highlight2 { background: #fff8f0; border-color: #D4873A; }
+    .stat-box .lbl { font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .stat-box .val { font-size: 18px; font-weight: 700; }
+    .stat-box.highlight .val { color: #5BAD7E; }
+    .stat-box.highlight2 .val { color: #D4873A; }
+    .stat-box .sub { font-size: 11px; color: #999; margin-top: 4px; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: #999; margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+    .profit-box { border: 1.5px solid #5BAD7E; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .profit-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .profit-row:last-child { border: none; font-size: 15px; font-weight: 700; padding-top: 10px; margin-top: 4px; border-top: 2px solid #e0e0e0; }
+    .neg { color: #c0614a; } .pos { color: #5BAD7E; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 24px; }
+    th { text-align: left; padding: 8px 8px; background: #f5f5f5; border-bottom: 2px solid #ddd; font-size: 10px; text-transform: uppercase; white-space: nowrap; }
+    td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .bar-bg { flex: 1; height: 5px; background: #eee; border-radius: 3px; }
     .bar-fill { height: 100%; background: #D4873A; border-radius: 3px; }
+    .footer { text-align: center; font-size: 10px; color: #bbb; margin-top: 32px; padding-top: 16px; border-top: 1px solid #eee; }
     @media print { body { padding: 16px; } }
   </style></head><body>
   <h1>SEMATA KATA</h1>
   <h2>Laporan Penjualan — ${periodLabel}</h2>
-  <div class="meta">Dicetak: ${now} · ${filtered.length} transaksi</div>
+  <div class="meta">Dicetak: ${now} &nbsp;·&nbsp; ${filtered.length} transaksi</div>
 
   <div class="stat-row">
-    <div class="stat-box"><div class="lbl">Total Pendapatan</div><div class="val">${fmt(totalRevenue)}</div></div>
-    <div class="stat-box"><div class="lbl">Jumlah Transaksi</div><div class="val">${filtered.length}</div></div>
-    <div class="stat-box"><div class="lbl">Rata-rata Order</div><div class="val">${fmt(filtered.length ? Math.round(totalRevenue/filtered.length) : 0)}</div></div>
+    <div class="stat-box highlight2"><div class="lbl">Omset Kotor</div><div class="val">${fmt(omsetKotor)}</div><div class="sub">${filtered.length} transaksi</div></div>
+    <div class="stat-box highlight"><div class="lbl">Omset Bersih</div><div class="val">${hppAvailable ? fmt(omsetBersih) : '—'}</div><div class="sub">${hppAvailable ? 'Setelah HPP & Pajak' : 'HPP belum diisi'}</div></div>
+    <div class="stat-box"><div class="lbl">Gross Margin</div><div class="val">${grossMargin !== null ? grossMargin + '%' : '—'}</div><div class="sub">${hppAvailable ? 'HPP ' + fmt(totalHPP) : '—'}</div></div>
+    <div class="stat-box"><div class="lbl">Rata-rata Order</div><div class="val">${fmt(avgOrder)}</div></div>
     <div class="stat-box"><div class="lbl">Total Diskon</div><div class="val">${fmt(totalDiscount)}</div></div>
+    <div class="stat-box"><div class="lbl">Total Pajak</div><div class="val">${fmt(totalTax)}</div></div>
   </div>
 
   ${hppAvailable ? `
-  <div class="section-title">Perhitungan Profit</div>
+  <div class="section-title">Rincian Profit</div>
   <div class="profit-box">
-    <div class="profit-row"><span>Total Pendapatan (Revenue)</span><span>${fmt(totalRevenue)}</span></div>
-    <div class="profit-row negative"><span>Total HPP (Harga Pokok Produksi)</span><span>- ${fmt(totalHPP)}</span></div>
-    ${totalDiscount > 0 ? `<div class="profit-row negative"><span>Total Diskon Diberikan</span><span>- ${fmt(totalDiscount)}</span></div>` : ''}
-    <div class="profit-row positive"><span>Gross Profit</span><span>${fmt(grossProfit)}</span></div>
-    <div class="profit-row positive"><span>Gross Margin</span><span>${grossMargin}%</span></div>
-  </div>` : `<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px;margin-bottom:24px;font-size:12px;color:#888">
-    HPP belum diisi untuk menu — isi HPP di Pengaturan > Kelola Menu untuk melihat perhitungan profit.
+    <div class="profit-row"><span>Omset Kotor (Revenue)</span><span>${fmt(omsetKotor)}</span></div>
+    <div class="profit-row neg"><span>HPP (Harga Pokok Produksi)</span><span>− ${fmt(totalHPP)}</span></div>
+    <div class="profit-row neg"><span>Pajak PPN</span><span>− ${fmt(totalTax)}</span></div>
+    ${totalDiscount > 0 ? `<div class="profit-row neg"><span>Total Diskon</span><span>− ${fmt(totalDiscount)}</span></div>` : ''}
+    <div class="profit-row pos"><span>Omset Bersih</span><span>${fmt(omsetBersih)}</span></div>
+  </div>` : `<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:#aaa">
+    HPP belum diisi — isi di Pengaturan > Kelola Menu untuk melihat Omset Bersih.
   </div>`}
 
   <div class="section-title">Menu Terlaris</div>
   ${topItems.map(([name, count], i) => {
-    const menuItem = MENU.find(m => m.name === name);
-    const hpp = menuItem?.hpp || 0;
-    const profit = hpp > 0 ? (menuItem.price - hpp) * count : null;
-    return `<div class="top-item-row">
-      <div style="width:20px;font-weight:700;color:#888">${i+1}</div>
-      <div style="width:200px">${name}</div>
+    const m = MENU.find(x => x.name === name);
+    const profit = m && m.hpp > 0 ? fmt((m.price - m.hpp) * count) : null;
+    return `<div class="bar-row">
+      <div style="width:18px;font-weight:700;color:#bbb;font-size:11px">${i+1}</div>
+      <div style="width:180px;font-size:12px">${name}</div>
       <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(count/topItems[0][1]*100)}%"></div></div>
-      <div style="width:40px;text-align:right;font-weight:700">${count}×</div>
-      ${profit !== null ? `<div style="width:100px;text-align:right;color:#5BAD7E;font-size:11px">+${fmt(profit)}</div>` : ''}
+      <div style="width:35px;text-align:right;font-weight:700;font-size:12px">${count}×</div>
+      ${profit ? `<div style="width:90px;text-align:right;color:#5BAD7E;font-size:11px">+${profit}</div>` : '<div style="width:90px"></div>'}
     </div>`;
   }).join('')}
 
   <div class="section-title">Detail Transaksi</div>
   <table>
-    <thead><tr><th>Order #</th><th>Meja</th><th>Items</th><th>Metode</th><th>Diskon</th><th>Total</th><th>Waktu</th></tr></thead>
+    <thead><tr><th>Order #</th><th>Meja</th><th>Items</th><th>Metode</th><th>Diskon</th><th>Subtotal</th><th>Pajak</th><th>Total</th><th>Waktu</th></tr></thead>
     <tbody>
       ${filtered.map(t => `<tr>
-        <td><b>${t.id}</b></td>
-        <td>${t.table}</td>
-        <td style="max-width:200px;overflow:hidden">${t.items}</td>
+        <td><b>${t.id}</b></td><td>${t.table}</td>
+        <td style="max-width:180px;overflow:hidden;font-size:10px">${t.items}</td>
         <td>${t.method.toUpperCase()}</td>
         <td style="color:#5BAD7E">${t.discountName || '-'}</td>
+        <td>${fmt(t.subtotal || t.total)}</td>
+        <td>${fmt(t.tax || 0)}</td>
         <td><b>${fmt(t.total)}</b></td>
-        <td>${t.time}</td>
+        <td style="white-space:nowrap">${t.time}</td>
       </tr>`).join('')}
     </tbody>
   </table>
-
-  <div style="text-align:center;font-size:11px;color:#aaa;margin-top:32px;border-top:1px solid #eee;padding-top:16px">
-    SEMATA KATA POS · Laporan ${periodLabel} · ${now}
-  </div>
+  <div class="footer">SEMATA KATA POS &nbsp;·&nbsp; Laporan ${periodLabel} &nbsp;·&nbsp; ${now}</div>
   <script>window.onload = () => window.print();<\/script>
   </body></html>`);
   win.document.close();
