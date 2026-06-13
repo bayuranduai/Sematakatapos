@@ -2703,7 +2703,7 @@ function renderReports() {
     '<td><span class="pill ' + (methodPills[t.method]||'cash') + '">' + t.method.toUpperCase() + '</span></td>' +
     '<td style="font-size:11px;color:var(--green)">' + (t.discountName||'-') + '</td>' +
     '<td class="mono" style="font-weight:700">' + fmt(t.total) + '</td>' +
-    '<td style="color:var(--text-dim)">' + t.time + '</td></tr>'
+    '<td style="color:var(--text-dim);white-space:nowrap">' + (t.date ? t.date.slice(5).replace('-','/') + ' ' : '') + t.time + '</td></tr>'
   ).join('');
 }
 
@@ -3489,35 +3489,57 @@ function openCloseShiftModal() {
   const totalSales = shiftTxns.reduce((s, t) => s + t.total, 0);
   const totalCash = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s, t) => s + t.total, 0);
   const totalDigital = totalSales - totalCash;
+  const modalAwal = currentShift.modal_awal || 0;
+  const expectedSetoran = totalCash + modalAwal;
 
   document.getElementById('close-shift-summary').innerHTML = `
-    <div style="font-weight:700;margin-bottom:10px">Rekap Shift — ${currentShift.kasir_name}</div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--text-dim)">Total Penjualan</span><span style="font-family:'JetBrains Mono';font-weight:700;color:var(--amber)">${fmt(totalSales)}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--text-dim)">Tunai</span><span style="font-family:'JetBrains Mono'">${fmt(totalCash)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-dim)">Digital (QRIS/Transfer)</span><span style="font-family:'JetBrains Mono'">${fmt(totalDigital)}</span></div>`;
+    <div style="font-weight:700;margin-bottom:12px;font-size:14px">Rekap Shift — ${currentShift.kasir_name}</div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+      <span style="color:var(--text-dim)">Total Penjualan</span>
+      <span style="font-family:'JetBrains Mono';font-weight:700;color:var(--amber)">${fmt(totalSales)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+      <span style="color:var(--text-dim)">↳ Tunai</span>
+      <span style="font-family:'JetBrains Mono'">${fmt(totalCash)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+      <span style="color:var(--text-dim)">↳ Digital (QRIS/Transfer)</span>
+      <span style="font-family:'JetBrains Mono'">${fmt(totalDigital)}</span>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:10px 0"></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+      <span style="color:var(--text-dim)">Kas Awal (modal)</span>
+      <span style="font-family:'JetBrains Mono'">${fmt(modalAwal)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
+      <span style="color:var(--text-dim)">+ Tunai Masuk</span>
+      <span style="font-family:'JetBrains Mono'">${fmt(totalCash)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;background:var(--surface3);padding:8px 10px;border-radius:8px;margin-top:6px">
+      <span>Total Harus Disetor</span>
+      <span style="font-family:'JetBrains Mono';color:var(--green)">${fmt(expectedSetoran)}</span>
+    </div>`;
 
   document.getElementById('shift-setoran').value = '';
   document.getElementById('shift-close-note').value = '';
   document.getElementById('shift-selisih-val').textContent = fmt(0);
   document.getElementById('shift-selisih-val').style.color = 'var(--text-dim)';
 
-  // Store for selisih calc
   document.getElementById('close-shift-modal').dataset.totalCash = totalCash;
   document.getElementById('close-shift-modal').dataset.totalSales = totalSales;
   document.getElementById('close-shift-modal').dataset.totalDigital = totalDigital;
+  document.getElementById('close-shift-modal').dataset.expectedSetoran = expectedSetoran;
 
   openModal('close-shift-modal');
 }
 
 function updateSelisih() {
   const modal = document.getElementById('close-shift-modal');
-  const totalCash = parseInt(modal.dataset.totalCash) || 0;
-  const modalAwal = currentShift?.modal_awal || 0;
+  const expectedSetoran = parseInt(modal.dataset.expectedSetoran) || 0;
   const setoran = parseInt(document.getElementById('shift-setoran').value) || 0;
-  const expected = totalCash + modalAwal;
-  const selisih = setoran - expected;
+  const selisih = setoran - expectedSetoran;
   const el = document.getElementById('shift-selisih-val');
-  el.textContent = fmt(selisih);
+  el.textContent = (selisih >= 0 ? '+' : '') + fmt(selisih);
   el.style.color = selisih === 0 ? 'var(--green)' : selisih > 0 ? 'var(--amber)' : 'var(--red)';
 }
 
