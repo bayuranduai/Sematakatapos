@@ -1765,11 +1765,11 @@ async function init() {
 
   if (SUPABASE_CONFIGURED) {
     setConnStatus('connecting');
-    await loadMenuFromDB();
-    await loadDiscountsFromDB();
-    await loadOrdersFromDB();
-    await loadTransactionsFromDB();
-    await loadShiftsFromDB();
+    try { await loadMenuFromDB(); } catch(e) { console.error('loadMenu failed:', e); }
+    try { await loadDiscountsFromDB(); } catch(e) { console.error('loadDiscounts failed:', e); }
+    try { await loadOrdersFromDB(); } catch(e) { console.error('loadOrders failed:', e); }
+    try { await loadTransactionsFromDB(); } catch(e) { console.error('loadTransactions failed:', e); }
+    try { await loadShiftsFromDB(); } catch(e) { console.error('loadShifts failed:', e); }
     subscribeRealtime();
     setConnStatus('online');
   } else {
@@ -1942,6 +1942,12 @@ async function dbSaveTransaction(txn) {
     items_summary: txn.items,
     payment_method: txn.method,
     total: txn.total,
+    subtotal: txn.subtotal || txn.total,
+    tax: txn.tax || 0,
+    discount_amount: txn.discount || 0,
+    discount_name: txn.discountName || '',
+    items_detail: txn.itemsDetail || null,
+    note: txn.note || '',
   });
   if (error) console.error('Save transaction error:', error);
 }
