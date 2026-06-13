@@ -1878,6 +1878,7 @@ async function loadTransactionsFromDB() {
       itemsDetail: r.items_detail || null,
       time: new Date(r.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),
       date: new Date(r.created_at).toISOString().split('T')[0],
+      timestamp: r.created_at,
     }));
   }
 }
@@ -2496,6 +2497,7 @@ async function finishOrder(method) {
     note: note,
     time: now.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }),
     date: now.toISOString().split('T')[0],
+    timestamp: now.toISOString(),
   };
   transactions.unshift(txn);
 
@@ -3376,7 +3378,13 @@ function updateShiftDuration() {
 function renderShiftLiveStats() {
   if (!currentShift) return;
   const shiftStart = new Date(currentShift.opened_at);
-  const shiftTxns = transactions.filter(t => new Date(t.date + 'T' + t.time) >= shiftStart || t.date >= shiftStart.toISOString().split('T')[0]);
+
+  // Filter transaksi yang terjadi SETELAH shift ini dibuka
+  const shiftTxns = transactions.filter(t => {
+    const txTime = t.timestamp ? new Date(t.timestamp) : null;
+    return txTime && txTime >= shiftStart;
+  });
+
   const totalSales = shiftTxns.reduce((s, t) => s + t.total, 0);
   const totalCash = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s, t) => s + t.total, 0);
   const totalDigital = totalSales - totalCash;
@@ -3471,7 +3479,13 @@ async function openShift() {
 
 function openCloseShiftModal() {
   const shiftStart = new Date(currentShift.opened_at);
-  const shiftTxns = transactions.filter(t => new Date(t.date) >= new Date(shiftStart.toISOString().split('T')[0]));
+
+  // Hanya transaksi SETELAH shift ini dibuka
+  const shiftTxns = transactions.filter(t => {
+    const txTime = t.timestamp ? new Date(t.timestamp) : null;
+    return txTime && txTime >= shiftStart;
+  });
+
   const totalSales = shiftTxns.reduce((s, t) => s + t.total, 0);
   const totalCash = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s, t) => s + t.total, 0);
   const totalDigital = totalSales - totalCash;
