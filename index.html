@@ -2326,57 +2326,77 @@ function updateKitchenTimers() { renderKitchen(); }
 // ═══════════════════════════════════════════════
 function renderReports() {
   const statGrid = document.getElementById('stat-grid');
-  const today = transactions.filter(t => t.date === new Date().toISOString().split('T')[0]);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const today = transactions.filter(t => t.date === todayStr);
   const todayRev = today.reduce((s, t) => s + t.total, 0);
   const totalOrders = today.length;
   const avgOrder = totalOrders ? Math.round(todayRev / totalOrders) : 0;
+  const totalItems = today.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
 
   statGrid.innerHTML = [
-    { label:'Pendapatan Hari Ini', val: fmt(todayRev), sub: `${totalOrders} transaksi`, trend:'+12% vs kemarin' },
-    { label:'Rata-rata Nilai Order', val: fmt(avgOrder), sub:'per transaksi', trend:'+5% vs kemarin' },
-    { label:'Total Transaksi', val: transactions.length, sub:'all time', trend:'' },
-    { label:'Menu Terjual', val: transactions.reduce((s, t) => s + (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0), 0), sub:'item hari ini', trend:'' },
+    { label:'Pendapatan Hari Ini', val: fmt(todayRev), sub: `${totalOrders} transaksi` },
+    { label:'Rata-rata Nilai Order', val: fmt(avgOrder), sub:'per transaksi' },
+    { label:'Total Transaksi', val: transactions.length, sub:'all time' },
+    { label:'Menu Terjual', val: totalItems, sub:'item hari ini' },
   ].map(s => `
     <div class="stat-card">
       <div class="s-label">${s.label}</div>
       <div class="s-val">${s.val}</div>
-      ${s.sub ? `<div class="s-sub">${s.sub}</div>` : ''}
-      ${s.trend ? `<div class="s-trend">▲ ${s.trend}</div>` : ''}
+      <div class="s-sub">${s.sub}</div>
     </div>
   `).join('');
 
-  // Chart
-  const days = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
-  const mockRevs = [285000, 420000, 390000, 510000, 480000, 650000, todayRev || 340000];
-  const maxRev = Math.max(...mockRevs);
-  document.getElementById('sales-chart').innerHTML = mockRevs.map((r, i) => `
+  // Chart — 7 hari terakhir dari transaksi real
+  const days = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+  const chartData = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayName = days[d.getDay()];
+    const rev = transactions.filter(t => t.date === dateStr).reduce((s, t) => s + t.total, 0);
+    chartData.push({ label: dayName, rev, isToday: i === 0 });
+  }
+  const maxRev = Math.max(...chartData.map(d => d.rev), 1);
+  document.getElementById('sales-chart').innerHTML = chartData.map(d => `
     <div class="bar-wrap">
-      <div class="bar-val">${r >= 1000 ? Math.round(r/1000)+'k' : r}</div>
-      <div class="bar ${i === 6 ? 'today' : ''}" style="height:${Math.round((r/maxRev)*80)+4}px"></div>
-      <div class="bar-label">${days[i]}</div>
+      <div class="bar-val">${d.rev >= 1000 ? Math.round(d.rev/1000)+'k' : d.rev || ''}</div>
+      <div class="bar ${d.isToday ? 'today' : ''}" style="height:${Math.round((d.rev/maxRev)*80)+4}px"></div>
+      <div class="bar-label">${d.label}</div>
     </div>
   `).join('');
 
-  // Top items
-  const topData = [
-    { name:'Latte', count:47 },
-    { name:'Cappuccino', count:38 },
-    { name:'Matcha Latte', count:32 },
-    { name:'🥐 Croissant', count:28 },
-    { name:'🖤 Americano', count:25 },
-  ];
-  document.getElementById('top-items').innerHTML = topData.map((item, i) => `
-    <div class="top-item">
-      <div class="rank">${i+1}</div>
-      <div class="t-bar-wrap">
-        <div class="t-item-name">${item.name}</div>
-        <div class="t-bar-bg"><div class="t-bar-fill" style="width:${Math.round(item.count/47*100)}%"></div></div>
-      </div>
-      <div class="t-count">${item.count}</div>
-    </div>
-  `).join('');
+  // Top items — hitung dari semua transaksi real
+  const itemCount = {};
+  transactions.forEach(t => {
+    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
+      t.itemsDetail.forEach(i => {
+        itemCount[i.name] = (itemCount[i.name] || 0) + i.qty;
+      });
+    } else if (t.items) {
+      t.items.split(', ').forEach(s => {
+        const match = s.match(/^(.+) x(\d+)$/);
+        if (match) itemCount[match[1]] = (itemCount[match[1]] || 0) + parseInt(match[2]);
+      });
+    }
+  });
+  const topData = Object.entries(itemCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const maxCount = topData[0]?.[1] || 1;
+  document.getElementById('top-items').innerHTML = topData.length
+    ? topData.map(([name, count], i) => `
+      <div class="top-item">
+        <div class="rank">${i+1}</div>
+        <div class="t-bar-wrap">
+          <div class="t-item-name">${name}</div>
+          <div class="t-bar-bg"><div class="t-bar-fill" style="width:${Math.round(count/maxCount*100)}%"></div></div>
+        </div>
+        <div class="t-count">${count}</div>
+      </div>`).join('')
+    : '<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Belum ada data transaksi</div>';
 
-  // Transactions
+  // Transactions table
   const methodPills = { cash:'cash', tunai:'cash', qris:'qris', gopay:'gopay', ovo:'ovo', dana:'gopay', transfer:'blue' };
   document.getElementById('txn-tbody').innerHTML = transactions.slice(0, 15).map(t => `
     <tr onclick="showTxnDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
