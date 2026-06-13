@@ -745,7 +745,34 @@
   .eli-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
   .eli-del:hover { color: var(--red); }
 
-  /* ══ SETTINGS VIEW ══ */
+  /* ── MOBILE RESPONSIVE ── */
+  @media (max-width: 768px) {
+    body { height: auto; min-height: 100vh; overflow: auto; }
+    .view { overflow: auto; min-height: calc(100vh - 56px); }
+    
+    /* Kasir — stack menu dan cart */
+    #view-pos { flex-direction: column; height: auto; }
+    .menu-panel { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+    .cart-panel { width: 100%; height: auto; }
+    .cart-items { max-height: 200px; overflow-y: auto; }
+    .cart-footer { position: sticky; bottom: 0; background: var(--surface); z-index: 10; }
+
+    /* Laporan — stack chart dan top items */
+    #view-reports { overflow-y: auto; }
+    .reports-content > div[style*='grid'] { grid-template-columns: 1fr !important; }
+    .top-items { overflow-x: auto; }
+    .chart-bars { overflow-x: auto; }
+
+    /* Stat grid */
+    .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+    /* Settings */
+    #view-settings { flex-direction: column; }
+    .settings-sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 8px; gap: 4px; }
+    .settings-sidebar h3 { display: none; }
+    .s-nav-btn { padding: 6px 10px; font-size: 12px; }
+    .settings-content { padding: 16px; }
+  }
   #view-settings { flex-direction: row; overflow: hidden; }
   .settings-sidebar {
     width: 200px; flex-shrink: 0;
@@ -1805,6 +1832,7 @@ async function init() {
     renderTables();
     renderReports();
     renderKitchen();
+    await loadStoreInfo();
   } else {
     setConnStatus('offline');
     showToast('Mode Demo — data tidak tersimpan permanen', 'info');
@@ -1814,6 +1842,7 @@ async function init() {
     renderTables();
     renderReports();
     renderKitchen();
+    await loadStoreInfo();
   }
   setInterval(updateKitchenTimers, 60000);
 }
@@ -2759,7 +2788,8 @@ function resetTxnFilter() {
 
 function renderTxnTable(txns) {
   const methodPills = { cash:'cash', tunai:'cash', qris:'qris', gopay:'gopay', ovo:'ovo', dana:'gopay', transfer:'blue' };
-  document.getElementById('txn-tbody').innerHTML = txns.slice(0, 50).map(t =>
+  const totalOmset = txns.reduce((s, t) => s + t.total, 0);
+  const rows = txns.slice(0, 50).map(t =>
     '<tr onclick="showTxnDetail(\'' + t.id + '\')" style="cursor:pointer" onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'\'">' +
     '<td class="mono" style="font-weight:700;color:var(--amber)">' + t.id + '</td>' +
     '<td>' + t.table + '</td>' +
@@ -2769,6 +2799,15 @@ function renderTxnTable(txns) {
     '<td class="mono" style="font-weight:700">' + fmt(t.total) + '</td>' +
     '<td style="color:var(--text-dim);white-space:nowrap">' + (t.date ? t.date.slice(5).replace('-','/') + ' ' : '') + t.time + '</td></tr>'
   ).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-dim)">Tidak ada transaksi</td></tr>';
+
+  const totalRow = txns.length > 0 ?
+    '<tr style="border-top:2px solid var(--border);background:var(--surface2)">' +
+    '<td colspan="4" style="font-weight:700;padding:10px;font-size:12px;color:var(--text-dim)">' + txns.length + ' transaksi</td>' +
+    '<td></td>' +
+    '<td class="mono" style="font-weight:800;font-size:14px;color:var(--amber)">' + fmt(totalOmset) + '</td>' +
+    '<td></td></tr>' : '';
+
+  document.getElementById('txn-tbody').innerHTML = rows + totalRow;
 }
 
 // Cari nama kasir berdasarkan timestamp transaksi (cocokkan ke shift)
@@ -2883,7 +2922,7 @@ async function renderReports() {
     const revFmt = d.rev >= 1000000 ? (d.rev/1000000).toFixed(1)+'jt' : d.rev >= 1000 ? Math.round(d.rev/1000)+'k' : (d.rev || '0');
     const tgl = String(d.day);
     return '<div class="bar-wrap" onclick="filterTxnByDate(\'' + d.dateStr + '\')" id="bar-' + d.dateStr + '">' +
-      '<div class="bar-tooltip"><div class="bt-date">' + d.day + ' ' + chartNow.toLocaleDateString('id-ID',{month:'short'}) + '</div>' + (d.rev ? fmt(d.rev) : 'Belum ada') + '</div>' +
+      '<div class="bar-tooltip"><div class="bt-date">' + (d.isToday ? '⭐ Hari ini' : d.day + ' ' + chartNow.toLocaleDateString('id-ID',{month:'short'})) + '</div>' + (d.rev ? fmt(d.rev) : 'Belum ada') + '</div>' +
       '<div class="bar ' + cls + '" style="height:' + h + 'px"></div>' +
       '<div class="bar-label">' + tgl + '</div>' +
       '</div>';
@@ -3447,7 +3486,48 @@ function updateServiceDisplay() {
   document.getElementById('service-rate-field').style.display =
     document.getElementById('toggle-service').checked ? 'flex' : 'none';
 }
-function saveStoreInfo() { showToast('Informasi toko disimpan', 'success'); }
+async function saveStoreInfo() {
+  const info = {
+    name:    document.getElementById('store-name').value,
+    tagline: document.getElementById('store-tagline').value,
+    address: document.getElementById('store-address').value,
+    phone:   document.getElementById('store-phone').value,
+    wifi:    document.getElementById('store-wifi').value,
+    footer:  document.getElementById('store-footer').value,
+  };
+  if (SUPABASE_CONFIGURED) {
+    const { error } = await sb.from('store_settings').update(info).eq('id', 1);
+    if (error) { console.error('Save store error:', error); showToast('Gagal simpan', 'error'); return; }
+  } else {
+    localStorage.setItem('storeInfo', JSON.stringify(info));
+  }
+  showToast('Informasi toko disimpan ✅', 'success');
+}
+
+async function loadStoreInfo() {
+  try {
+    if (SUPABASE_CONFIGURED) {
+      const { data, error } = await sb.from('store_settings').select('*').eq('id', 1).single();
+      if (error || !data) return;
+      if (data.name)    document.getElementById('store-name').value    = data.name;
+      if (data.tagline) document.getElementById('store-tagline').value = data.tagline;
+      if (data.address) document.getElementById('store-address').value = data.address;
+      if (data.phone)   document.getElementById('store-phone').value   = data.phone;
+      if (data.wifi)    document.getElementById('store-wifi').value    = data.wifi;
+      if (data.footer)  document.getElementById('store-footer').value  = data.footer;
+    } else {
+      const saved = localStorage.getItem('storeInfo');
+      if (!saved) return;
+      const info = JSON.parse(saved);
+      if (info.name)    document.getElementById('store-name').value    = info.name;
+      if (info.tagline) document.getElementById('store-tagline').value = info.tagline;
+      if (info.address) document.getElementById('store-address').value = info.address;
+      if (info.phone)   document.getElementById('store-phone').value   = info.phone;
+      if (info.wifi)    document.getElementById('store-wifi').value    = info.wifi;
+      if (info.footer)  document.getElementById('store-footer').value  = info.footer;
+    }
+  } catch(e) { console.error('loadStoreInfo error:', e); }
+}
 function saveTaxConfig() {
   const rate = document.getElementById('tax-rate').value;
   showToast(`Pajak ${rate}% disimpan `, 'success');
