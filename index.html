@@ -874,6 +874,12 @@
     <div class="cart-footer">
       <div class="subtotal-row"><span>Subtotal</span><span class="val" id="subtotal">Rp 0</span></div>
       <div class="subtotal-row"><span>PPN 11%</span><span class="val" id="tax">Rp 0</span></div>
+      <div class="subtotal-row" id="discount-row" style="display:none;color:var(--green)"><span>Diskon</span><span class="val" id="discount-val" style="color:var(--green)">-Rp 0</span></div>
+      <div style="margin-bottom:8px">
+        <select class="table-select" id="discount-select" style="width:100%;font-size:12px;padding:7px 10px" onchange="applyDiscount()">
+          <option value="">-- Tanpa Diskon --</option>
+        </select>
+      </div>
       <div class="total-row"><span>Total</span><span class="val" id="total">Rp 0</span></div>
       <button class="pay-btn" id="pay-btn" onclick="openPaymentModal()" disabled>
         Bayar Digital
@@ -904,6 +910,7 @@
   <div class="tables-header">
     <h2>Manajemen Meja</h2>
     <div style="font-size:12px;color:var(--text-dim)" id="table-summary"></div>
+    <button class="add-menu-btn" onclick="openAddTable()" style="margin-left:auto;font-size:12px;padding:7px 14px">+ Tambah Meja</button>
   </div>
   <div class="tables-grid" id="tables-grid"></div>
 </div>
@@ -1271,6 +1278,45 @@
   </div>
 </div>
 
+<!-- ADD TABLE MODAL -->
+<div class="modal-overlay" id="add-table-modal">
+  <div class="modal" style="width:360px">
+    <div class="modal-title">
+      <span id="table-modal-title">Tambah Meja</span>
+      <button class="modal-close" onclick="closeModal('add-table-modal')">✕</button>
+    </div>
+    <input type="hidden" id="edit-table-id">
+    <div class="s-field">
+      <div class="s-label">Nama Meja</div>
+      <input class="s-input" type="text" id="table-name-input" placeholder="Contoh: Meja 11, VIP 1, Teras A">
+    </div>
+    <div class="s-input-row">
+      <div class="s-field">
+        <div class="s-label">Jumlah Kursi</div>
+        <input class="s-input" type="number" id="table-seats-input" value="2" min="1" max="20">
+      </div>
+      <div class="s-field">
+        <div class="s-label">Lokasi</div>
+        <select class="s-input" id="table-indoor-input">
+          <option value="true">Indoor</option>
+          <option value="false">Outdoor</option>
+        </select>
+      </div>
+    </div>
+    <div class="s-field" id="table-status-field" style="display:none">
+      <div class="s-label">Status</div>
+      <select class="s-input" id="table-status-input">
+        <option value="free">Kosong</option>
+        <option value="occupied">Terisi</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="confirm-btn" style="background:var(--amber);color:#1A0F00" onclick="saveTable()">Simpan</button>
+      <button class="k-btn" onclick="closeModal('add-table-modal')" style="margin-top:0">Batal</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -1444,11 +1490,13 @@ let cart = [];
 let currentFilter = 'Semua';
 let currentSearch = '';
 let selectedPayment = 'qris';
-let orders = []; // kitchen orders
+let orders = [];
 let transactions = [];
-let tableOrders = {}; // tableId -> orderId
+let tableOrders = {};
 let orderCounter = 1000;
 let qrisTimer = null;
+let activeDiscountId = null;
+let discountAmount = 0;
 
 // Demo transactions history
 transactions = [
@@ -1763,7 +1811,11 @@ function renderCart() {
 
   if (cart.length === 0) {
     el.innerHTML = `<div class="cart-empty"><p>Pilih menu untuk<br>memulai pesanan</p></div>`;
-    updateTotals(0);
+    discountAmount = 0;
+    activeDiscountId = null;
+    document.getElementById('discount-select').value = '';
+    document.getElementById('discount-row').style.display = 'none';
+    updateTotalsWithDiscount();
     document.getElementById('pay-btn').disabled = true;
     document.getElementById('pay-cash-btn').disabled = true;
     return;
@@ -1771,7 +1823,6 @@ function renderCart() {
 
   el.innerHTML = cart.map(c => `
     <div class="cart-item">
-      <span style="font-size:18px">${c.emoji}</span>
       <div style="flex:1">
         <div class="ci-name">${c.name}</div>
         <div class="ci-price">${fmt(c.price * c.qty)}</div>
@@ -1784,8 +1835,8 @@ function renderCart() {
     </div>
   `).join('');
 
-  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  updateTotals(subtotal);
+  renderDiscountOptions();
+  updateTotalsWithDiscount();
   document.getElementById('pay-btn').disabled = false;
   document.getElementById('pay-cash-btn').disabled = false;
 }
@@ -1800,13 +1851,17 @@ function updateTotals(subtotal) {
 
 function getTotal() {
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  return subtotal + Math.round(subtotal * 0.11);
+  const tax = Math.round(subtotal * 0.11);
+  return Math.max(0, subtotal + tax - discountAmount);
 }
 
 function resetCart() {
   cart = [];
+  discountAmount = 0;
+  activeDiscountId = null;
   document.getElementById('cart-note').value = '';
   document.getElementById('cart-table').value = '';
+  document.getElementById('discount-row').style.display = 'none';
   renderCart();
 }
 
@@ -1830,12 +1885,17 @@ function renderTables() {
     const isOcc = occupied.includes(t.id);
     const order = isOcc ? orders.find(o => o.tableId === t.id) : null;
     return `
-    <div class="table-card ${isOcc ? 'occupied' : ''}" onclick="tableClick(${t.id})">
-      <div class="t-icon">${t.indoor ? '🪑' : '☀️'}</div>
+    <div class="table-card ${isOcc ? 'occupied' : ''}">
+      <div class="t-icon">${t.indoor ? 'In' : 'Out'}</div>
       <div class="t-name">${t.name}</div>
       <div class="t-status">${t.seats} kursi · ${t.indoor ? 'Indoor' : 'Outdoor'}</div>
       ${isOcc ? `<div class="t-amount">${fmt(order ? order.total : 0)}</div>` : ''}
       <span class="table-badge ${isOcc ? 'occupied' : 'free'}">${isOcc ? 'Terisi' : 'Kosong'}</span>
+      <div style="display:flex;gap:4px;margin-top:8px;justify-content:center">
+        <button class="mmi-btn" onclick="openEditTable(${t.id})" style="font-size:11px">Edit</button>
+        ${isOcc ? `<button class="mmi-btn" onclick="clearTable(${t.id})" style="font-size:11px;border-color:var(--green);color:var(--green)">Kosongkan</button>` : `<button class="mmi-btn" onclick="setTableOccupied(${t.id})" style="font-size:11px;border-color:var(--amber);color:var(--amber)">Tandai Terisi</button>`}
+        <button class="mmi-btn danger" onclick="deleteTable(${t.id})" style="font-size:11px">Hapus</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1850,6 +1910,155 @@ function tableClick(id) {
     document.getElementById('cart-table').value = id;
     showToast(`${t.name} dipilih untuk pesanan`, 'success');
   }
+}
+
+function clearTable(id) {
+  const t = TABLES.find(t => t.id === id);
+  if (!confirm(`Kosongkan ${t.name}? Pesanan aktif akan ditandai selesai.`)) return;
+  orders.forEach(o => { if (o.tableId === id) { o.status = 'done'; dbUpdateOrderStatus(o.id, 'done'); } });
+  delete tableOrders[id];
+  renderTables();
+  renderKitchen();
+  updateKitchenBadge();
+  showToast(`${t.name} dikosongkan`, 'success');
+}
+
+function setTableOccupied(id) {
+  const t = TABLES.find(t => t.id === id);
+  tableOrders[id] = 'manual';
+  renderTables();
+  showToast(`${t.name} ditandai terisi`, 'info');
+}
+
+function openAddTable() {
+  document.getElementById('table-modal-title').textContent = 'Tambah Meja';
+  document.getElementById('edit-table-id').value = '';
+  document.getElementById('table-name-input').value = '';
+  document.getElementById('table-seats-input').value = '2';
+  document.getElementById('table-indoor-input').value = 'true';
+  document.getElementById('table-status-field').style.display = 'none';
+  openModal('add-table-modal');
+}
+
+function openEditTable(id) {
+  const t = TABLES.find(t => t.id === id);
+  document.getElementById('table-modal-title').textContent = 'Edit Meja';
+  document.getElementById('edit-table-id').value = id;
+  document.getElementById('table-name-input').value = t.name;
+  document.getElementById('table-seats-input').value = t.seats;
+  document.getElementById('table-indoor-input').value = String(t.indoor);
+  document.getElementById('table-status-field').style.display = 'flex';
+  const isOcc = Object.keys(tableOrders).map(Number).includes(id);
+  document.getElementById('table-status-input').value = isOcc ? 'occupied' : 'free';
+  openModal('add-table-modal');
+}
+
+function saveTable() {
+  const name = document.getElementById('table-name-input').value.trim();
+  if (!name) { showToast('Nama meja tidak boleh kosong', 'error'); return; }
+  const seats = parseInt(document.getElementById('table-seats-input').value) || 2;
+  const indoor = document.getElementById('table-indoor-input').value === 'true';
+  const id = document.getElementById('edit-table-id').value;
+
+  if (id) {
+    const t = TABLES.find(t => t.id == id);
+    t.name = name; t.seats = seats; t.indoor = indoor;
+    const status = document.getElementById('table-status-input').value;
+    if (status === 'free') delete tableOrders[parseInt(id)];
+    else if (status === 'occupied') tableOrders[parseInt(id)] = 'manual';
+    showToast(`${name} diupdate`, 'success');
+  } else {
+    const newId = TABLES.length ? Math.max(...TABLES.map(t => t.id)) + 1 : 1;
+    TABLES.push({ id: newId, name, seats, indoor });
+    showToast(`${name} ditambahkan`, 'success');
+  }
+  closeModal('add-table-modal');
+  renderTables();
+  renderTableOptions();
+}
+
+function deleteTable(id) {
+  const t = TABLES.find(t => t.id === id);
+  if (!confirm(`Hapus ${t.name}?`)) return;
+  const idx = TABLES.findIndex(t => t.id === id);
+  TABLES.splice(idx, 1);
+  delete tableOrders[id];
+  renderTables();
+  renderTableOptions();
+  showToast(`${t.name} dihapus`, 'info');
+}
+
+// ── DISCOUNT ──
+let activeDiscountId = null;
+let discountAmount = 0;
+
+function renderDiscountOptions() {
+  const sel = document.getElementById('discount-select');
+  const now = new Date();
+  const hhmm = now.toTimeString().slice(0,5);
+  const active = DISCOUNTS.filter(d => {
+    if (!d.active) return false;
+    if (d.from && d.to && d.from !== '00:00' && d.to !== '23:59') {
+      return hhmm >= d.from && hhmm <= d.to;
+    }
+    return true;
+  });
+  sel.innerHTML = '<option value="">-- Tanpa Diskon --</option>' +
+    active.map(d => {
+      const val = d.type === 'percent' ? `${d.value}%` : d.type === 'fixed' ? fmt(d.value) : 'B1G1';
+      return `<option value="${d.id}">${d.name} (${val})</option>`;
+    }).join('');
+}
+
+function applyDiscount() {
+  const id = parseInt(document.getElementById('discount-select').value);
+  activeDiscountId = id || null;
+  updateTotalsWithDiscount();
+}
+
+function updateTotalsWithDiscount() {
+  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const tax = Math.round(subtotal * 0.11);
+  let discount = 0;
+
+  if (activeDiscountId) {
+    const d = DISCOUNTS.find(x => x.id === activeDiscountId);
+    if (d) {
+      if (subtotal >= (d.min || 0)) {
+        if (d.type === 'percent') discount = Math.round(subtotal * d.value / 100);
+        else if (d.type === 'fixed') discount = d.value;
+        else if (d.type === 'bogo') {
+          const maxItem = cart.reduce((a, c) => c.price > a.price ? c : a, cart[0]);
+          if (maxItem) discount = maxItem.price;
+        }
+      } else {
+        showToast(`Min. pembelian ${fmt(d.min)} untuk diskon ini`, 'error');
+        activeDiscountId = null;
+        document.getElementById('discount-select').value = '';
+      }
+    }
+  }
+
+  discountAmount = discount;
+  const total = subtotal + tax - discount;
+
+  document.getElementById('subtotal').textContent = fmt(subtotal);
+  document.getElementById('tax').textContent = fmt(tax);
+
+  const discRow = document.getElementById('discount-row');
+  if (discount > 0) {
+    discRow.style.display = 'flex';
+    document.getElementById('discount-val').textContent = '-' + fmt(discount);
+  } else {
+    discRow.style.display = 'none';
+  }
+  document.getElementById('total').textContent = fmt(Math.max(0, total));
+}
+
+function getTotal() {
+  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const tax = Math.round(subtotal * 0.11);
+  return Math.max(0, subtotal + tax - discountAmount);
 }
 
 // ═══════════════════════════════════════════════
