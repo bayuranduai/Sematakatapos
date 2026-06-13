@@ -2689,6 +2689,30 @@ document.addEventListener('click', e => {
   }
 });
 
+function renderTopItems(txns) {
+  const itemCount = {};
+  txns.forEach(t => {
+    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
+      t.itemsDetail.forEach(i => { itemCount[i.name] = (itemCount[i.name]||0) + i.qty; });
+    } else if (t.items) {
+      t.items.split(', ').forEach(s => {
+        const match = s.match(/^(.+) x(\d+)$/);
+        if (match) itemCount[match[1]] = (itemCount[match[1]]||0) + parseInt(match[2]);
+      });
+    }
+  });
+  const topData = Object.entries(itemCount).sort((a,b) => b[1]-a[1]).slice(0,5);
+  const maxCount = topData[0]?.[1] || 1;
+  document.getElementById('top-items').innerHTML = topData.length
+    ? topData.map(([name, count], i) =>
+        '<div class="top-item"><div class="rank">' + (i+1) + '</div><div class="t-bar-wrap">' +
+        '<div class="t-item-name">' + name + '</div>' +
+        '<div class="t-bar-bg"><div class="t-bar-fill" style="width:' + Math.round(count/maxCount*100) + '%"></div></div>' +
+        '</div><div class="t-count">' + count + '</div></div>'
+      ).join('')
+    : '<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Belum ada data</div>';
+}
+
 let selectedChartDate = null;
 
 function filterTxnByDate(dateStr) {
@@ -2710,8 +2734,10 @@ function filterTxnByDate(dateStr) {
   document.getElementById('txn-table-label').textContent = 'Transaksi — ' + label;
   document.getElementById('txn-reset-btn').style.display = 'block';
 
-  // Render tabel hanya untuk tanggal ini
-  renderTxnTable(transactions.filter(t => t.date === dateStr));
+  // Render tabel dan top items hanya untuk tanggal ini
+  const dateTxns = transactions.filter(t => t.date === dateStr);
+  renderTxnTable(dateTxns);
+  renderTopItems(dateTxns);
 }
 
 function resetTxnFilter() {
@@ -2720,7 +2746,8 @@ function resetTxnFilter() {
   document.getElementById('txn-table-label').textContent = 'Transaksi Terakhir';
   document.getElementById('txn-reset-btn').style.display = 'none';
   const filtered = getFilteredTransactions();
-  renderTxnTable(filtered.slice(0, 20));
+  renderTxnTable(filtered);
+  renderTopItems(filtered);
 }
 
 function renderTxnTable(txns) {
@@ -2836,27 +2863,7 @@ function renderReports() {
   }).join('');
 
   // Top items dari filtered
-  const itemCount = {};
-  filtered.forEach(t => {
-    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
-      t.itemsDetail.forEach(i => { itemCount[i.name] = (itemCount[i.name]||0) + i.qty; });
-    } else if (t.items) {
-      t.items.split(', ').forEach(s => {
-        const match = s.match(/^(.+) x(\d+)$/);
-        if (match) itemCount[match[1]] = (itemCount[match[1]]||0) + parseInt(match[2]);
-      });
-    }
-  });
-  const topData = Object.entries(itemCount).sort((a,b) => b[1]-a[1]).slice(0,5);
-  const maxCount = topData[0]?.[1] || 1;
-  document.getElementById('top-items').innerHTML = topData.length
-    ? topData.map(([name, count], i) =>
-        '<div class="top-item"><div class="rank">' + (i+1) + '</div><div class="t-bar-wrap">' +
-        '<div class="t-item-name">' + name + '</div>' +
-        '<div class="t-bar-bg"><div class="t-bar-fill" style="width:' + Math.round(count/maxCount*100) + '%"></div></div>' +
-        '</div><div class="t-count">' + count + '</div></div>'
-      ).join('')
-    : '<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Belum ada data</div>';
+  renderTopItems(filtered);
 
   // Reset chart date selection when period changes
   selectedChartDate = null;
