@@ -1581,8 +1581,11 @@ async function loadMenuFromDB() {
     MENU = data.map(r => ({
       id: r.id, name: r.name, price: r.price,
       hpp: r.hpp || 0,
-      cat: r.category, emoji: r.emoji, available: r.available
+      cat: r.category, emoji: r.emoji || '☕', available: r.available
     }));
+    // Sync categories from actual DB data
+    const dbCats = [...new Set(MENU.map(m => m.cat).filter(Boolean))];
+    if (dbCats.length) CATEGORIES = dbCats;
   }
 }
 
@@ -2790,16 +2793,8 @@ function populateEditCatSelect(selected) {
   sel.innerHTML = CATEGORIES.map(c => `<option value="${c}" ${c===selected?'selected':''}>${c}</option>`).join('');
 }
 
-function renderEmojiPicker() {
-  document.getElementById('emoji-picker').innerHTML = EMOJIS.map(e =>
-    `<button class="ep-btn ${e===selectedEmoji?'selected':''}" onclick="pickEmoji('${e}')">${e}</button>`
-  ).join('');
-}
-
-function pickEmoji(e) {
-  selectedEmoji = e;
-  renderEmojiPicker();
-}
+function renderEmojiPicker() { /* emoji picker removed */ }
+function pickEmoji(e) { /* emoji picker removed */ }
 
 async function saveMenuItem() {
   const name = document.getElementById('edit-name').value.trim();
@@ -2810,7 +2805,9 @@ async function saveMenuItem() {
   if (!name) { showToast('Nama menu tidak boleh kosong', 'error'); return; }
   if (!price || price < 0) { showToast('Harga tidak valid', 'error'); return; }
 
-  const itemData = { name, price, hpp, cat, emoji: selectedEmoji, available: avail };
+  // Keep existing emoji if editing, use default if new
+  const existingEmoji = editingMenuId ? (MENU.find(m => m.id === editingMenuId)?.emoji || '☕') : '☕';
+  const itemData = { name, price, hpp, cat, emoji: existingEmoji, available: avail };
   if (editingMenuId) {
     const item = MENU.find(m => m.id === editingMenuId);
     Object.assign(item, itemData);
@@ -2819,6 +2816,8 @@ async function saveMenuItem() {
   } else {
     const newId = await dbSaveMenuItem(itemData) || (Math.max(...MENU.map(m => m.id)) + 1);
     MENU.push({ id: newId, ...itemData });
+    // Add new category if not exists
+    if (!CATEGORIES.includes(cat)) CATEGORIES.push(cat);
     showToast(`${name} berhasil ditambahkan`, 'success');
   }
   closeModal('edit-menu-modal');
