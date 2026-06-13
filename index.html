@@ -1809,6 +1809,8 @@ async function loadMenuFromDB() {
     // Sync categories from actual DB data
     const dbCats = [...new Set(MENU.map(m => m.cat).filter(Boolean))];
     if (dbCats.length) CATEGORIES = dbCats;
+    // Reset filter to Semua so all items show
+    currentFilter = 'Semua';
   }
 }
 
