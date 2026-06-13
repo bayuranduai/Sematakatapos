@@ -1472,7 +1472,7 @@ let MENU = [
   { id:18, name:'Club Sandwich', price:38000, cat:'Makanan', emoji:'🥪', available:false },
 ];
 
-const TABLES = [
+let TABLES = [
   { id:1, name:'Meja 1', seats:2, indoor:true },
   { id:2, name:'Meja 2', seats:2, indoor:true },
   { id:3, name:'Meja 3', seats:4, indoor:true },
@@ -1989,9 +1989,6 @@ function deleteTable(id) {
 }
 
 // ── DISCOUNT ──
-let activeDiscountId = null;
-let discountAmount = 0;
-
 function renderDiscountOptions() {
   const sel = document.getElementById('discount-select');
   const now = new Date();
@@ -2588,16 +2585,6 @@ async function deleteMenuItem(id) {
   renderMenuMgmt();
   renderMenu();
   showToast(`${item.name} dihapus`, 'info');
-}
-
-async function toggleAvail(id) {
-  const item = MENU.find(m => m.id === id);
-  if (!item) return;
-  item.available = !item.available;
-  await dbToggleMenuAvail(id, item.available);
-  renderMenuMgmt();
-  renderMenu();
-  showToast(`${item.name} → ${item.available ? 'Tersedia ' : 'Habis '}`, item.available ? 'success' : 'info');
 }
 
 // ── Categories ──
