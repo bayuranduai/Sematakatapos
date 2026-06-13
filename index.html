@@ -3515,22 +3515,59 @@ async function loadStoreInfo() {
       if (data.phone)   document.getElementById('store-phone').value   = data.phone;
       if (data.wifi)    document.getElementById('store-wifi').value    = data.wifi;
       if (data.footer)  document.getElementById('store-footer').value  = data.footer;
+      // Tax & service settings
+      if (data.tax_enabled !== null) {
+        document.getElementById('toggle-tax').checked = data.tax_enabled;
+        updateTaxDisplay();
+      }
+      if (data.tax_rate) document.getElementById('tax-rate').value = data.tax_rate;
+      if (data.service_enabled !== null) {
+        document.getElementById('toggle-service').checked = data.service_enabled;
+        updateServiceDisplay();
+      }
+      if (data.service_rate) document.getElementById('service-rate').value = data.service_rate;
     } else {
       const saved = localStorage.getItem('storeInfo');
-      if (!saved) return;
-      const info = JSON.parse(saved);
-      if (info.name)    document.getElementById('store-name').value    = info.name;
-      if (info.tagline) document.getElementById('store-tagline').value = info.tagline;
-      if (info.address) document.getElementById('store-address').value = info.address;
-      if (info.phone)   document.getElementById('store-phone').value   = info.phone;
-      if (info.wifi)    document.getElementById('store-wifi').value    = info.wifi;
-      if (info.footer)  document.getElementById('store-footer').value  = info.footer;
+      if (saved) {
+        const info = JSON.parse(saved);
+        if (info.name)    document.getElementById('store-name').value    = info.name;
+        if (info.tagline) document.getElementById('store-tagline').value = info.tagline;
+        if (info.address) document.getElementById('store-address').value = info.address;
+        if (info.phone)   document.getElementById('store-phone').value   = info.phone;
+        if (info.wifi)    document.getElementById('store-wifi').value    = info.wifi;
+        if (info.footer)  document.getElementById('store-footer').value  = info.footer;
+      }
+      const taxSaved = localStorage.getItem('taxConfig');
+      if (taxSaved) {
+        const tc = JSON.parse(taxSaved);
+        document.getElementById('toggle-tax').checked = tc.taxEnabled;
+        document.getElementById('tax-rate').value = tc.taxRate;
+        document.getElementById('toggle-service').checked = tc.serviceEnabled;
+        document.getElementById('service-rate').value = tc.serviceRate;
+        updateTaxDisplay();
+        updateServiceDisplay();
+      }
     }
   } catch(e) { console.error('loadStoreInfo error:', e); }
 }
-function saveTaxConfig() {
-  const rate = document.getElementById('tax-rate').value;
-  showToast(`Pajak ${rate}% disimpan `, 'success');
+async function saveTaxConfig() {
+  const taxEnabled = document.getElementById('toggle-tax').checked;
+  const taxRate = parseInt(document.getElementById('tax-rate').value) || 11;
+  const serviceEnabled = document.getElementById('toggle-service').checked;
+  const serviceRate = parseInt(document.getElementById('service-rate').value) || 5;
+
+  if (SUPABASE_CONFIGURED) {
+    const { error } = await sb.from('store_settings').update({
+      tax_enabled: taxEnabled,
+      tax_rate: taxRate,
+      service_enabled: serviceEnabled,
+      service_rate: serviceRate,
+    }).eq('id', 1);
+    if (error) { console.error('Save tax error:', error); showToast('Gagal simpan', 'error'); return; }
+  } else {
+    localStorage.setItem('taxConfig', JSON.stringify({ taxEnabled, taxRate, serviceEnabled, serviceRate }));
+  }
+  showToast(`Pajak ${taxRate}% disimpan ✅`, 'success');
 }
 
 function showTxnDetail(id) {
