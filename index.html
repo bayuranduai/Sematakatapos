@@ -651,6 +651,81 @@
   @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
   @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
 
+  /* ══ SHIFT VIEW ══ */
+  #view-shift { flex-direction: column; overflow-y: auto; background: var(--bg); }
+  #view-expenses { flex-direction: column; overflow-y: auto; background: var(--bg); }
+  .shift-content { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 900px; margin: 0 auto; width: 100%; }
+
+  .shift-status-card {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: var(--radius); padding: 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px;
+  }
+  .shift-status-card.open { border-color: var(--green); }
+  .shift-status-card.closed { border-color: var(--border); }
+  .shift-info .shift-name { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .shift-info .shift-meta { font-size: 13px; color: var(--text-dim); }
+  .shift-info .shift-duration { font-size: 13px; color: var(--green); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+  .shift-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  .shift-open-btn {
+    padding: 12px 24px; border-radius: var(--radius); border: none;
+    background: var(--green); color: #fff;
+    font-family: inherit; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  .shift-open-btn:hover { filter: brightness(1.1); }
+  .shift-close-btn {
+    padding: 12px 24px; border-radius: var(--radius); border: none;
+    background: var(--red); color: #fff;
+    font-family: inherit; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  .shift-close-btn:hover { filter: brightness(1.1); }
+
+  .shift-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+
+  .shift-history-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+    display: flex; align-items: center; gap: 14px;
+    cursor: pointer; transition: border-color .13s;
+  }
+  .shift-history-item:hover { border-color: var(--amber); }
+  .shi-icon { font-size: 28px; }
+  .shi-info { flex: 1; }
+  .shi-name { font-size: 14px; font-weight: 700; }
+  .shi-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .shi-total { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; color: var(--amber); }
+  .shi-status { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+  .shi-status.open { background: rgba(91,173,126,.15); color: var(--green); }
+  .shi-status.closed { background: var(--surface3); color: var(--text-dim); }
+
+  /* Expenses */
+  .expense-form-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .expense-cats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .exp-cat-btn {
+    padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border);
+    background: transparent; color: var(--text-dim);
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all .13s;
+  }
+  .exp-cat-btn:hover { border-color: var(--amber-dim); color: var(--text); }
+  .exp-cat-btn.active { border-color: var(--amber); background: var(--amber-dim); color: var(--amber-lt); }
+
+  .expense-list-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .expense-list-item:last-child { border-bottom: none; }
+  .eli-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; background: var(--surface3); color: var(--text-dim); white-space: nowrap; }
+  .eli-desc { flex: 1; font-size: 13px; }
+  .eli-time { font-size: 11px; color: var(--text-dim); }
+  .eli-amount { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--red); white-space: nowrap; }
+  .eli-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
+  .eli-del:hover { color: var(--red); }
+
   /* ══ SETTINGS VIEW ══ */
   #view-settings { flex-direction: row; overflow: hidden; }
   .settings-sidebar {
@@ -829,6 +904,8 @@
       <span class="badge" id="kitchen-badge">0</span>
     </button>
     <button class="nav-tab" onclick="switchView('tables')" id="tab-tables">Meja</button>
+    <button class="nav-tab" onclick="switchView('shift')" id="tab-shift">Shift</button>
+    <button class="nav-tab" onclick="switchView('expenses')" id="tab-expenses">Pengeluaran</button>
     <button class="nav-tab" onclick="switchView('reports')" id="tab-reports">Laporan</button>
     <button class="nav-tab" onclick="switchView('settings')" id="tab-settings">Pengaturan</button>
   </div>
@@ -925,7 +1002,13 @@
         <option value="today">Hari ini</option>
         <option value="week">7 hari terakhir</option>
         <option value="month">Bulan ini</option>
+        <option value="custom">Pilih Tanggal</option>
       </select>
+      <div id="custom-date-range" style="display:none;gap:6px;align-items:center">
+        <input type="date" class="date-filter" id="date-from" onchange="renderReports()">
+        <span style="color:var(--text-dim);font-size:12px">s/d</span>
+        <input type="date" class="date-filter" id="date-to" onchange="renderReports()">
+      </div>
       <div style="position:relative;display:inline-block" id="download-wrap">
         <button class="add-menu-btn" onclick="toggleDownloadMenu()" style="font-size:12px;padding:7px 16px">
           Download Report ▾
@@ -1205,6 +1288,85 @@
   </div>
 </div>
 
+<!--  SHIFT VIEW  -->
+<div class="view" id="view-shift">
+  <div class="shift-content">
+    <div class="reports-header" style="margin-bottom:0">
+      <h2>Manajemen Shift</h2>
+    </div>
+
+    <!-- Current Shift Status -->
+    <div class="shift-status-card" id="shift-status-card">
+      <div class="shift-info">
+        <div class="shift-name" id="shift-status-name">Tidak ada shift aktif</div>
+        <div class="shift-meta" id="shift-status-meta">Buka shift untuk mulai mencatat transaksi</div>
+        <div class="shift-duration" id="shift-status-duration"></div>
+      </div>
+      <div class="shift-actions">
+        <button class="shift-open-btn" id="shift-open-btn" onclick="openShiftModal()">Buka Shift</button>
+        <button class="shift-close-btn" id="shift-close-btn" onclick="openCloseShiftModal()" style="display:none">Tutup Shift</button>
+      </div>
+    </div>
+
+    <!-- Live Stats (saat shift aktif) -->
+    <div id="shift-live-stats" style="display:none">
+      <div class="section-title">Rekap Shift Berjalan</div>
+      <div class="shift-stats" id="shift-stats-grid"></div>
+    </div>
+
+    <!-- Shift History -->
+    <div>
+      <div class="section-title">History Shift</div>
+      <div id="shift-history-list">
+        <div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada shift tercatat</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!--  EXPENSES VIEW  -->
+<div class="view" id="view-expenses">
+  <div class="shift-content">
+    <div class="reports-header" style="margin-bottom:0">
+      <h2>Pengeluaran</h2>
+      <input type="date" class="date-filter" id="expense-date-filter" onchange="renderExpenses()">
+    </div>
+
+    <!-- Summary -->
+    <div class="shift-stats" id="expense-summary"></div>
+
+    <!-- Add Expense Form -->
+    <div class="expense-form-card">
+      <div class="s-card-title" style="margin-bottom:12px">Tambah Pengeluaran</div>
+      <div class="expense-cats" id="expense-cat-pills">
+        <button class="exp-cat-btn active" onclick="selectExpCat(this,'Bahan Baku')">Bahan Baku</button>
+        <button class="exp-cat-btn" onclick="selectExpCat(this,'Operasional')">Operasional</button>
+        <button class="exp-cat-btn" onclick="selectExpCat(this,'Gaji')">Gaji</button>
+        <button class="exp-cat-btn" onclick="selectExpCat(this,'Lainnya')">Lainnya</button>
+      </div>
+      <div class="s-input-row">
+        <div class="s-field" style="margin-bottom:0">
+          <div class="s-label">Keterangan</div>
+          <input class="s-input" type="text" id="expense-desc" placeholder="Contoh: Beli ayam 2kg, bayar listrik...">
+        </div>
+        <div class="s-field" style="margin-bottom:0">
+          <div class="s-label">Jumlah (Rp)</div>
+          <input class="s-input" type="number" id="expense-amount" placeholder="50000">
+        </div>
+      </div>
+      <button class="s-save-btn" style="margin-top:14px;width:100%;padding:10px" onclick="addExpense()">+ Catat Pengeluaran</button>
+    </div>
+
+    <!-- Expense List -->
+    <div class="report-card">
+      <div class="section-title">Daftar Pengeluaran</div>
+      <div id="expense-list">
+        <div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran hari ini</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!--  PAYMENT MODAL  -->
 <div class="modal-overlay" id="payment-modal">
   <div class="modal">
@@ -1324,6 +1486,65 @@
       <button class="confirm-btn" style="background:var(--amber);color:#1A0F00" onclick="saveTable()">Simpan</button>
       <button class="k-btn" onclick="closeModal('add-table-modal')" style="margin-top:0">Batal</button>
     </div>
+  </div>
+</div>
+
+<!-- OPEN SHIFT MODAL -->
+<div class="modal-overlay" id="open-shift-modal">
+  <div class="modal" style="width:400px">
+    <div class="modal-title">
+      Buka Shift
+      <button class="modal-close" onclick="closeModal('open-shift-modal')">✕</button>
+    </div>
+    <div class="s-field">
+      <div class="s-label">Nama Kasir</div>
+      <input class="s-input" type="text" id="shift-kasir-name" placeholder="Nama kasir yang bertugas">
+    </div>
+    <div class="s-field">
+      <div class="s-label">Modal Awal / Uang Kas (Rp)</div>
+      <input class="s-input" type="number" id="shift-modal-awal" placeholder="0">
+    </div>
+    <div class="s-field">
+      <div class="s-label">Catatan (opsional)</div>
+      <input class="s-input" type="text" id="shift-open-note" placeholder="Catatan shift...">
+    </div>
+    <button class="confirm-btn" style="background:var(--green)" onclick="openShift()">Mulai Shift</button>
+  </div>
+</div>
+
+<!-- CLOSE SHIFT MODAL -->
+<div class="modal-overlay" id="close-shift-modal">
+  <div class="modal" style="width:440px">
+    <div class="modal-title">
+      Tutup Shift
+      <button class="modal-close" onclick="closeModal('close-shift-modal')">✕</button>
+    </div>
+    <div id="close-shift-summary" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px;font-size:13px"></div>
+    <div class="s-field">
+      <div class="s-label">Uang Tunai Disetor (Rp)</div>
+      <input class="s-input" type="number" id="shift-setoran" placeholder="0" oninput="updateSelisih()">
+    </div>
+    <div id="shift-selisih-row" style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;margin-bottom:8px">
+      <span style="color:var(--text-dim)">Selisih kas</span>
+      <span id="shift-selisih-val" style="font-family:'JetBrains Mono';font-weight:700">Rp 0</span>
+    </div>
+    <div class="s-field">
+      <div class="s-label">Catatan Penutupan (opsional)</div>
+      <input class="s-input" type="text" id="shift-close-note" placeholder="Catatan serah terima...">
+    </div>
+    <button class="confirm-btn" style="background:var(--red)" onclick="closeShift()">Tutup & Setor</button>
+  </div>
+</div>
+
+<!-- SHIFT DETAIL MODAL -->
+<div class="modal-overlay" id="shift-detail-modal">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">
+      Detail Shift
+      <button class="modal-close" onclick="closeModal('shift-detail-modal')">✕</button>
+    </div>
+    <div id="shift-detail-content"></div>
+    <button class="k-btn" onclick="closeModal('shift-detail-modal')" style="margin-top:8px">Tutup</button>
   </div>
 </div>
 
@@ -1548,6 +1769,7 @@ async function init() {
     await loadDiscountsFromDB();
     await loadOrdersFromDB();
     await loadTransactionsFromDB();
+    await loadShiftsFromDB();
     subscribeRealtime();
     setConnStatus('online');
   } else {
@@ -1789,6 +2011,11 @@ function switchView(name) {
   if (name === 'kitchen') renderKitchen();
   if (name === 'tables') renderTables();
   if (name === 'settings') { showSettingsPanel('menu'); renderMenuMgmt(); }
+  if (name === 'shift') renderShiftView();
+  if (name === 'expenses') {
+    document.getElementById('expense-date-filter').value = new Date().toISOString().split('T')[0];
+    renderExpenses();
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -2346,6 +2573,8 @@ function updateKitchenTimers() { renderKitchen(); }
 function getFilteredTransactions() {
   const period = document.getElementById('report-period').value;
   const todayStr = new Date().toISOString().split('T')[0];
+  const customRange = document.getElementById('custom-date-range');
+
   if (period === 'today') return transactions.filter(t => t.date === todayStr);
   if (period === 'week') {
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
@@ -2355,6 +2584,14 @@ function getFilteredTransactions() {
     const monthStr = new Date().toISOString().slice(0, 7);
     return transactions.filter(t => t.date && t.date.startsWith(monthStr));
   }
+  if (period === 'custom') {
+    customRange.style.display = 'flex';
+    const from = document.getElementById('date-from').value;
+    const to = document.getElementById('date-to').value;
+    if (!from || !to) return transactions;
+    return transactions.filter(t => t.date >= from && t.date <= to);
+  }
+  customRange.style.display = 'none';
   return transactions;
 }
 
@@ -2390,6 +2627,10 @@ document.addEventListener('click', e => {
 });
 
 function renderReports() {
+  const period = document.getElementById('report-period').value;
+  const customRange = document.getElementById('custom-date-range');
+  customRange.style.display = period === 'custom' ? 'flex' : 'none';
+
   const filtered = getFilteredTransactions();
   const { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin } = calcProfitData(filtered);
   const avgOrder = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
@@ -3067,8 +3308,318 @@ function showTxnDetail(id) {
   openModal('txn-detail-modal');
 }
 
-// Start
-init().catch(console.error);
+// ═══════════════════════════════════════════════
+//  SHIFT
+// ═══════════════════════════════════════════════
+let currentShift = null;
+let allShifts = [];
+let shiftTimer = null;
+
+async function loadShiftsFromDB() {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data, error } = await sb.from('shifts').select('*').order('opened_at', { ascending: false }).limit(20);
+  if (error) { console.error('Shifts load error:', error); return; }
+  if (data) {
+    allShifts = data;
+    currentShift = data.find(s => s.status === 'open') || null;
+  }
+}
+
+function renderShiftView() {
+  const card = document.getElementById('shift-status-card');
+  const openBtn = document.getElementById('shift-open-btn');
+  const closeBtn = document.getElementById('shift-close-btn');
+  const liveStats = document.getElementById('shift-live-stats');
+
+  if (currentShift) {
+    card.className = 'shift-status-card open';
+    document.getElementById('shift-status-name').textContent = 'Shift ' + currentShift.kasir_name + ' — Aktif';
+    const opened = new Date(currentShift.opened_at);
+    document.getElementById('shift-status-meta').textContent = 'Dibuka: ' + opened.toLocaleString('id-ID');
+    openBtn.style.display = 'none';
+    closeBtn.style.display = 'block';
+    liveStats.style.display = 'block';
+    updateShiftDuration();
+    if (shiftTimer) clearInterval(shiftTimer);
+    shiftTimer = setInterval(updateShiftDuration, 60000);
+    renderShiftLiveStats();
+  } else {
+    card.className = 'shift-status-card closed';
+    document.getElementById('shift-status-name').textContent = 'Tidak ada shift aktif';
+    document.getElementById('shift-status-meta').textContent = 'Buka shift untuk mulai mencatat transaksi';
+    document.getElementById('shift-status-duration').textContent = '';
+    openBtn.style.display = 'block';
+    closeBtn.style.display = 'none';
+    liveStats.style.display = 'none';
+    if (shiftTimer) clearInterval(shiftTimer);
+  }
+
+  renderShiftHistory();
+}
+
+function updateShiftDuration() {
+  if (!currentShift) return;
+  const opened = new Date(currentShift.opened_at);
+  const diff = Math.floor((Date.now() - opened) / 60000);
+  const h = Math.floor(diff / 60), m = diff % 60;
+  document.getElementById('shift-status-duration').textContent = `Durasi: ${h}j ${m}m`;
+}
+
+function renderShiftLiveStats() {
+  if (!currentShift) return;
+  const shiftStart = new Date(currentShift.opened_at);
+  const shiftTxns = transactions.filter(t => new Date(t.date + 'T' + t.time) >= shiftStart || t.date >= shiftStart.toISOString().split('T')[0]);
+  const totalSales = shiftTxns.reduce((s, t) => s + t.total, 0);
+  const totalCash = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s, t) => s + t.total, 0);
+  const totalDigital = totalSales - totalCash;
+
+  document.getElementById('shift-stats-grid').innerHTML = [
+    { label: 'Total Penjualan', val: fmt(totalSales), sub: shiftTxns.length + ' transaksi' },
+    { label: 'Tunai', val: fmt(totalCash), sub: 'cash masuk' },
+    { label: 'Digital', val: fmt(totalDigital), sub: 'QRIS/transfer' },
+    { label: 'Modal Awal', val: fmt(currentShift.modal_awal || 0), sub: 'uang kas awal' },
+  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
+}
+
+function renderShiftHistory() {
+  const el = document.getElementById('shift-history-list');
+  if (!allShifts.length) {
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada shift tercatat</div>';
+    return;
+  }
+  el.innerHTML = allShifts.map(s => {
+    const opened = new Date(s.opened_at).toLocaleString('id-ID', { dateStyle:'short', timeStyle:'short' });
+    const closed = s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID', { dateStyle:'short', timeStyle:'short' }) : '—';
+    return `
+    <div class="shift-history-item" onclick="showShiftDetail(${s.id})">
+      <div class="shi-icon">${s.status === 'open' ? '🟢' : '⚫'}</div>
+      <div class="shi-info">
+        <div class="shi-name">${s.kasir_name}</div>
+        <div class="shi-meta">${opened} → ${closed}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="shi-total">${fmt(s.total_sales || 0)}</div>
+        <span class="shi-status ${s.status}">${s.status === 'open' ? 'Aktif' : 'Selesai'}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showShiftDetail(id) {
+  const s = allShifts.find(x => x.id === id);
+  if (!s) return;
+  const opened = new Date(s.opened_at).toLocaleString('id-ID');
+  const closed = s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID') : 'Masih berjalan';
+  document.getElementById('shift-detail-content').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-dim)">Kasir</span><span style="font-weight:700">${s.kasir_name}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-dim)">Buka</span><span>${opened}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-dim)">Tutup</span><span>${closed}</span></div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Modal Awal</span><span style="font-family:'JetBrains Mono'">${fmt(s.modal_awal || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Total Penjualan</span><span style="font-family:'JetBrains Mono';color:var(--amber)">${fmt(s.total_sales || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Tunai</span><span style="font-family:'JetBrains Mono'">${fmt(s.total_cash || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Digital</span><span style="font-family:'JetBrains Mono'">${fmt(s.total_digital || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Setoran Tunai</span><span style="font-family:'JetBrains Mono';color:var(--green)">${fmt(s.cash_setoran || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
+          <span>Selisih Kas</span>
+          <span style="font-family:'JetBrains Mono';color:${(s.selisih||0) === 0 ? 'var(--green)' : 'var(--red)'}">${fmt(s.selisih || 0)}</span>
+        </div>
+      </div>
+      ${s.note ? `<div style="background:var(--surface2);padding:10px;border-radius:8px;font-size:12px;color:var(--text-dim)">Catatan: ${s.note}</div>` : ''}
+    </div>`;
+  openModal('shift-detail-modal');
+}
+
+function openShiftModal() {
+  document.getElementById('shift-kasir-name').value = '';
+  document.getElementById('shift-modal-awal').value = '';
+  document.getElementById('shift-open-note').value = '';
+  openModal('open-shift-modal');
+}
+
+async function openShift() {
+  const name = document.getElementById('shift-kasir-name').value.trim();
+  if (!name) { showToast('Nama kasir tidak boleh kosong', 'error'); return; }
+  const modalAwal = parseInt(document.getElementById('shift-modal-awal').value) || 0;
+  const note = document.getElementById('shift-open-note').value.trim();
+
+  if (SUPABASE_CONFIGURED) {
+    const { data, error } = await sb.from('shifts').insert({
+      kasir_name: name, modal_awal: modalAwal, note, status: 'open'
+    }).select().single();
+    if (error) { console.error('Open shift error:', error); showToast('Gagal buka shift', 'error'); return; }
+    currentShift = data;
+    allShifts.unshift(data);
+  } else {
+    currentShift = { id: Date.now(), kasir_name: name, modal_awal: modalAwal, note, status: 'open', opened_at: new Date().toISOString(), total_sales: 0, total_cash: 0, total_digital: 0 };
+    allShifts.unshift(currentShift);
+  }
+
+  closeModal('open-shift-modal');
+  renderShiftView();
+  showToast('Shift ' + name + ' dibuka!', 'success');
+}
+
+function openCloseShiftModal() {
+  const shiftStart = new Date(currentShift.opened_at);
+  const shiftTxns = transactions.filter(t => new Date(t.date) >= new Date(shiftStart.toISOString().split('T')[0]));
+  const totalSales = shiftTxns.reduce((s, t) => s + t.total, 0);
+  const totalCash = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s, t) => s + t.total, 0);
+  const totalDigital = totalSales - totalCash;
+
+  document.getElementById('close-shift-summary').innerHTML = `
+    <div style="font-weight:700;margin-bottom:10px">Rekap Shift — ${currentShift.kasir_name}</div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--text-dim)">Total Penjualan</span><span style="font-family:'JetBrains Mono';font-weight:700;color:var(--amber)">${fmt(totalSales)}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--text-dim)">Tunai</span><span style="font-family:'JetBrains Mono'">${fmt(totalCash)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-dim)">Digital (QRIS/Transfer)</span><span style="font-family:'JetBrains Mono'">${fmt(totalDigital)}</span></div>`;
+
+  document.getElementById('shift-setoran').value = '';
+  document.getElementById('shift-close-note').value = '';
+  document.getElementById('shift-selisih-val').textContent = fmt(0);
+  document.getElementById('shift-selisih-val').style.color = 'var(--text-dim)';
+
+  // Store for selisih calc
+  document.getElementById('close-shift-modal').dataset.totalCash = totalCash;
+  document.getElementById('close-shift-modal').dataset.totalSales = totalSales;
+  document.getElementById('close-shift-modal').dataset.totalDigital = totalDigital;
+
+  openModal('close-shift-modal');
+}
+
+function updateSelisih() {
+  const modal = document.getElementById('close-shift-modal');
+  const totalCash = parseInt(modal.dataset.totalCash) || 0;
+  const modalAwal = currentShift?.modal_awal || 0;
+  const setoran = parseInt(document.getElementById('shift-setoran').value) || 0;
+  const expected = totalCash + modalAwal;
+  const selisih = setoran - expected;
+  const el = document.getElementById('shift-selisih-val');
+  el.textContent = fmt(selisih);
+  el.style.color = selisih === 0 ? 'var(--green)' : selisih > 0 ? 'var(--amber)' : 'var(--red)';
+}
+
+async function closeShift() {
+  const modal = document.getElementById('close-shift-modal');
+  const totalSales = parseInt(modal.dataset.totalSales) || 0;
+  const totalCash = parseInt(modal.dataset.totalCash) || 0;
+  const totalDigital = parseInt(modal.dataset.totalDigital) || 0;
+  const setoran = parseInt(document.getElementById('shift-setoran').value) || 0;
+  const note = document.getElementById('shift-close-note').value.trim();
+  const modalAwal = currentShift?.modal_awal || 0;
+  const selisih = setoran - (totalCash + modalAwal);
+
+  if (SUPABASE_CONFIGURED) {
+    const { error } = await sb.from('shifts').update({
+      status: 'closed', closed_at: new Date().toISOString(),
+      total_sales: totalSales, total_cash: totalCash,
+      total_digital: totalDigital, cash_setoran: setoran,
+      selisih, note: note || currentShift.note
+    }).eq('id', currentShift.id);
+    if (error) { console.error('Close shift error:', error); showToast('Gagal tutup shift', 'error'); return; }
+    await loadShiftsFromDB();
+  } else {
+    const idx = allShifts.findIndex(s => s.id === currentShift.id);
+    allShifts[idx] = { ...currentShift, status: 'closed', closed_at: new Date().toISOString(), total_sales: totalSales, total_cash: totalCash, total_digital: totalDigital, cash_setoran: setoran, selisih };
+    currentShift = null;
+  }
+
+  closeModal('close-shift-modal');
+  renderShiftView();
+  showToast('Shift ditutup. Setoran: ' + fmt(setoran), 'success');
+}
+
+// ═══════════════════════════════════════════════
+//  EXPENSES
+// ═══════════════════════════════════════════════
+let expenses = [];
+let selectedExpCat = 'Bahan Baku';
+
+function selectExpCat(btn, cat) {
+  selectedExpCat = cat;
+  document.querySelectorAll('.exp-cat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function loadExpensesFromDB(dateStr) {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data, error } = await sb.from('expenses')
+    .select('*').gte('created_at', dateStr + 'T00:00:00').lte('created_at', dateStr + 'T23:59:59')
+    .order('created_at', { ascending: false });
+  if (error) { console.error('Expenses load error:', error); return; }
+  expenses = data || [];
+}
+
+async function addExpense() {
+  const desc = document.getElementById('expense-desc').value.trim();
+  const amount = parseInt(document.getElementById('expense-amount').value);
+  if (!desc) { showToast('Keterangan tidak boleh kosong', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('Jumlah tidak valid', 'error'); return; }
+
+  const newExp = {
+    category: selectedExpCat, description: desc, amount,
+    shift_id: currentShift?.id || null,
+  };
+
+  if (SUPABASE_CONFIGURED) {
+    const { data, error } = await sb.from('expenses').insert(newExp).select().single();
+    if (error) { console.error('Add expense error:', error); showToast('Gagal simpan pengeluaran', 'error'); return; }
+    expenses.unshift(data);
+  } else {
+    expenses.unshift({ ...newExp, id: Date.now(), created_at: new Date().toISOString() });
+  }
+
+  document.getElementById('expense-desc').value = '';
+  document.getElementById('expense-amount').value = '';
+  renderExpenses();
+  showToast('Pengeluaran dicatat: ' + fmt(amount), 'success');
+}
+
+async function deleteExpense(id) {
+  if (!confirm('Hapus pengeluaran ini?')) return;
+  if (SUPABASE_CONFIGURED) {
+    await sb.from('expenses').delete().eq('id', id);
+  }
+  expenses = expenses.filter(e => e.id !== id);
+  renderExpenses();
+  showToast('Pengeluaran dihapus', 'info');
+}
+
+async function renderExpenses() {
+  const dateInput = document.getElementById('expense-date-filter');
+  if (!dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+  const dateStr = dateInput.value;
+
+  await loadExpensesFromDB(dateStr);
+
+  // Summary
+  const totalExp = expenses.reduce((s, e) => s + e.amount, 0);
+  const bycat = {};
+  expenses.forEach(e => { bycat[e.category] = (bycat[e.category] || 0) + e.amount; });
+  const txnsThatDay = transactions.filter(t => t.date === dateStr);
+  const revenue = txnsThatDay.reduce((s, t) => s + t.total, 0);
+
+  document.getElementById('expense-summary').innerHTML = [
+    { label: 'Total Pengeluaran', val: fmt(totalExp), sub: expenses.length + ' item' },
+    { label: 'Pendapatan Hari Ini', val: fmt(revenue), sub: txnsThatDay.length + ' transaksi' },
+    { label: 'Saldo Bersih', val: fmt(revenue - totalExp), sub: 'pendapatan - pengeluaran' },
+  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:18px">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
+
+  // List
+  const el = document.getElementById('expense-list');
+  if (!expenses.length) {
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran pada tanggal ini</div>';
+    return;
+  }
+  el.innerHTML = expenses.map(e => `
+    <div class="expense-list-item">
+      <span class="eli-cat">${e.category}</span>
+      <span class="eli-desc">${e.description}</span>
+      <span class="eli-time">${new Date(e.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</span>
+      <span class="eli-amount">-${fmt(e.amount)}</span>
+      <button class="eli-del" onclick="deleteExpense(${e.id})">×</button>
+    </div>`).join('');
+}
 </script>
 </body>
 </html>
