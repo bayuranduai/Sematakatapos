@@ -751,8 +751,9 @@
     background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 10px 12px;
     transition: border-color .13s;
+    position: relative;
   }
-  .menu-mgmt-item:hover { border-color: var(--border); }
+  .menu-mgmt-item:hover { border-color: var(--amber); }
   .mmi-emoji { font-size: 22px; width: 32px; text-align: center; cursor: pointer; }
   .mmi-info { flex: 1; }
   .mmi-name { font-size: 13px; font-weight: 700; }
@@ -2774,18 +2775,23 @@ function openAddMenu() {
 }
 
 function openEditMenu(id) {
-  const item = MENU.find(m => m.id === id);
-  if (!item) return;
-  editingMenuId = id;
-  document.getElementById('edit-modal-title').textContent = 'Edit Menu';
-  document.getElementById('edit-item-id').value = id;
-  document.getElementById('edit-name').value = item.name;
-  document.getElementById('edit-price').value = item.price;
-  document.getElementById('edit-hpp').value = item.hpp || '';
-  document.getElementById('edit-avail').value = String(item.available);
-  populateEditCatSelect(item.cat);
-  updateMarginPreview();
-  openModal('edit-menu-modal');
+  try {
+    const item = MENU.find(m => m.id === id);
+    if (!item) { showToast('Menu tidak ditemukan', 'error'); return; }
+    editingMenuId = id;
+    document.getElementById('edit-modal-title').textContent = 'Edit Menu';
+    document.getElementById('edit-item-id').value = id;
+    document.getElementById('edit-name').value = item.name;
+    document.getElementById('edit-price').value = item.price;
+    document.getElementById('edit-hpp').value = item.hpp || '';
+    document.getElementById('edit-avail').value = String(item.available);
+    populateEditCatSelect(item.cat);
+    updateMarginPreview();
+    openModal('edit-menu-modal');
+  } catch(e) {
+    console.error('openEditMenu error:', e);
+    showToast('Error membuka form edit', 'error');
+  }
 }
 
 function populateEditCatSelect(selected) {
@@ -2795,6 +2801,18 @@ function populateEditCatSelect(selected) {
 
 function renderEmojiPicker() { /* emoji picker removed */ }
 function pickEmoji(e) { /* emoji picker removed */ }
+
+function updateMarginPreview() {
+  const price = parseInt(document.getElementById('edit-price')?.value) || 0;
+  const hpp = parseInt(document.getElementById('edit-hpp')?.value) || 0;
+  const el = document.getElementById('margin-preview');
+  if (!el) return;
+  if (!price || !hpp) { el.textContent = '—'; el.style.color = 'var(--text-dim)'; return; }
+  const profit = price - hpp;
+  const margin = Math.round(profit / price * 100);
+  el.textContent = `${margin}% (${fmt(profit)})`;
+  el.style.color = profit > 0 ? 'var(--green)' : 'var(--red)';
+}
 
 async function saveMenuItem() {
   const name = document.getElementById('edit-name').value.trim();
