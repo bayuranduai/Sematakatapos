@@ -2441,7 +2441,7 @@ function renderReports() {
 
   const methodPills = { cash:'cash', tunai:'cash', qris:'qris', gopay:'gopay', ovo:'ovo', dana:'gopay', transfer:'blue' };
   document.getElementById('txn-tbody').innerHTML = filtered.slice(0, 20).map(t =>
-    '<tr onclick="showTxnDetail(\'' + t.id + '\')" style="cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">' +
+    '<tr onclick="showTxnDetail(\'' + t.id + '\')" style="cursor:pointer" onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'\'">' +
     '<td class="mono" style="font-weight:700;color:var(--amber)">' + t.id + '</td>' +
     '<td>' + t.table + '</td>' +
     '<td style="color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.items + '</td>' +
