@@ -998,16 +998,17 @@
   <div class="reports-content">
     <div class="reports-header">
       <h2>Laporan Penjualan</h2>
-      <select class="date-filter" id="report-period" onchange="renderReports()">
+      <select class="date-filter" id="report-period" onchange="onPeriodChange()">
         <option value="today">Hari ini</option>
         <option value="week">7 hari terakhir</option>
         <option value="month">Bulan ini</option>
         <option value="custom">Pilih Tanggal</option>
       </select>
       <div id="custom-date-range" style="display:none;gap:6px;align-items:center">
-        <input type="date" class="date-filter" id="date-from" onchange="renderReports()">
+        <input type="date" class="date-filter" id="date-from">
         <span style="color:var(--text-dim);font-size:12px">s/d</span>
-        <input type="date" class="date-filter" id="date-to" onchange="renderReports()">
+        <input type="date" class="date-filter" id="date-to">
+        <button class="add-menu-btn" onclick="renderReports()" style="font-size:12px;padding:7px 14px">Go</button>
       </div>
       <div style="position:relative;display:inline-block" id="download-wrap">
         <button class="add-menu-btn" onclick="toggleDownloadMenu()" style="font-size:12px;padding:7px 16px">
@@ -1019,6 +1020,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Shift info for selected period -->
+    <div id="shift-info-bar" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;font-size:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"></div>
 
     <div class="stat-grid" id="stat-grid"></div>
 
@@ -2580,28 +2584,33 @@ function updateKitchenTimers() { renderKitchen(); }
 // ═══════════════════════════════════════════════
 //  REPORTS
 // ═══════════════════════════════════════════════
+function onPeriodChange() {
+  const period = document.getElementById('report-period').value;
+  const customRange = document.getElementById('custom-date-range');
+  customRange.style.display = period === 'custom' ? 'flex' : 'none';
+  if (period !== 'custom') renderReports();
+}
+
 function getFilteredTransactions() {
   const period = document.getElementById('report-period').value;
   const todayStr = new Date().toISOString().split('T')[0];
-  const customRange = document.getElementById('custom-date-range');
 
   if (period === 'today') return transactions.filter(t => t.date === todayStr);
   if (period === 'week') {
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-    return transactions.filter(t => new Date(t.date) >= weekAgo);
+    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+    return transactions.filter(t => t.date >= weekAgoStr);
   }
   if (period === 'month') {
     const monthStr = new Date().toISOString().slice(0, 7);
     return transactions.filter(t => t.date && t.date.startsWith(monthStr));
   }
   if (period === 'custom') {
-    customRange.style.display = 'flex';
     const from = document.getElementById('date-from').value;
     const to = document.getElementById('date-to').value;
-    if (!from || !to) return transactions;
+    if (!from || !to) return [];
     return transactions.filter(t => t.date >= from && t.date <= to);
   }
-  customRange.style.display = 'none';
   return transactions;
 }
 
@@ -2642,6 +2651,40 @@ function renderReports() {
   customRange.style.display = period === 'custom' ? 'flex' : 'none';
 
   const filtered = getFilteredTransactions();
+
+  // Shift info bar — tampilkan kasir yang bertugas di periode ini
+  const shiftBar = document.getElementById('shift-info-bar');
+  if (allShifts.length) {
+    // Tentukan date range yang sedang dilihat
+    const todayStr = new Date().toISOString().split('T')[0];
+    let fromStr = todayStr, toStr = todayStr;
+    if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromStr = d.toISOString().split('T')[0]; toStr = todayStr; }
+    else if (period === 'month') { fromStr = new Date().toISOString().slice(0,7) + '-01'; toStr = todayStr; }
+    else if (period === 'custom') { fromStr = document.getElementById('date-from').value || todayStr; toStr = document.getElementById('date-to').value || todayStr; }
+
+    // Filter shift yang overlap dengan periode
+    const relevantShifts = allShifts.filter(s => {
+      const sDate = s.opened_at ? s.opened_at.split('T')[0] : '';
+      return sDate >= fromStr && sDate <= toStr;
+    });
+
+    if (relevantShifts.length) {
+      shiftBar.style.display = 'flex';
+      shiftBar.innerHTML = '<span style="color:var(--text-dim);font-weight:700">Kasir:</span>' +
+        relevantShifts.map(s => {
+          const tgl = new Date(s.opened_at).toLocaleDateString('id-ID',{day:'numeric',month:'short'});
+          const statusColor = s.status === 'open' ? 'var(--green)' : 'var(--text-dim)';
+          return `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;display:flex;align-items:center;gap:5px">
+            <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};flex-shrink:0"></span>
+            <strong>${s.kasir_name}</strong> <span style="color:var(--text-dim)">${tgl}</span>
+          </span>`;
+        }).join('');
+    } else {
+      shiftBar.style.display = 'none';
+    }
+  } else {
+    shiftBar.style.display = 'none';
+  }
   const { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin } = calcProfitData(filtered);
   const avgOrder = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
   const totalItems = filtered.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
