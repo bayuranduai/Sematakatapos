@@ -950,6 +950,7 @@
             <th>Meja</th>
             <th>Items</th>
             <th>Metode</th>
+            <th>Diskon</th>
             <th>Total</th>
             <th>Waktu</th>
           </tr>
@@ -1317,6 +1318,18 @@
   </div>
 </div>
 
+<!-- TRANSACTION DETAIL MODAL -->
+<div class="modal-overlay" id="txn-detail-modal">
+  <div class="modal" style="width:460px">
+    <div class="modal-title">
+      Detail Transaksi
+      <button class="modal-close" onclick="closeModal('txn-detail-modal')">✕</button>
+    </div>
+    <div id="txn-detail-content"></div>
+    <button class="k-btn" onclick="closeModal('txn-detail-modal')" style="margin-top:8px">Tutup</button>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -1590,6 +1603,13 @@ async function loadOrdersFromDB() {
       if (t) tableOrders[t.id] = o.id;
     });
   }
+
+  // Sync orderCounter from DB so no duplicates after refresh
+  const { data: allOrders } = await sb.from('orders').select('order_number').order('id', { ascending: false }).limit(1);
+  if (allOrders && allOrders.length) {
+    const lastNum = parseInt(allOrders[0].order_number.replace('#',''));
+    if (!isNaN(lastNum) && lastNum >= orderCounter) orderCounter = lastNum;
+  }
 }
 
 async function loadTransactionsFromDB() {
@@ -1601,6 +1621,12 @@ async function loadTransactionsFromDB() {
       id: r.order_number, table: r.table_name,
       items: r.items_summary, method: r.payment_method,
       total: r.total,
+      subtotal: r.subtotal || r.total,
+      tax: r.tax || 0,
+      discount: r.discount_amount || 0,
+      discountName: r.discount_name || '',
+      note: r.note || '',
+      itemsDetail: r.items_detail || null,
       time: new Date(r.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),
       date: new Date(r.created_at).toISOString().split('T')[0],
     }));
@@ -1656,10 +1682,15 @@ async function dbSaveOrder(order) {
 
 async function dbUpdateOrderStatus(orderNumber, status) {
   if (!SUPABASE_CONFIGURED) return;
-  const { error } = await sb.from('orders')
-    .update({ status })
-    .eq('order_number', orderNumber);
-  if (error) console.error('Update order error:', error);
+  // Use DB primary key if available, fallback to order_number
+  const order = orders.find(o => o.id === orderNumber);
+  if (order && order.dbId) {
+    const { error } = await sb.from('orders').update({ status }).eq('id', order.dbId);
+    if (error) console.error('Update order error:', error);
+  } else {
+    const { error } = await sb.from('orders').update({ status }).eq('order_number', orderNumber);
+    if (error) console.error('Update order error:', error);
+  }
 }
 
 async function dbSaveTransaction(txn) {
@@ -2201,8 +2232,14 @@ async function finishOrder(method) {
     id: orderNum,
     table: order.tableName,
     items: cart.map(c => `${c.name} x${c.qty}`).join(', '),
+    itemsDetail: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price })),
     method: method.toLowerCase().replace(' ',''),
     total,
+    subtotal,
+    tax,
+    discount: discountAmount,
+    discountName: activeDiscountId ? (DISCOUNTS.find(d => d.id === activeDiscountId)?.name || '') : '',
+    note: note,
     time: now.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }),
     date: now.toISOString().split('T')[0],
   };
@@ -2342,11 +2379,12 @@ function renderReports() {
   // Transactions
   const methodPills = { cash:'cash', tunai:'cash', qris:'qris', gopay:'gopay', ovo:'ovo', dana:'gopay', transfer:'blue' };
   document.getElementById('txn-tbody').innerHTML = transactions.slice(0, 15).map(t => `
-    <tr>
+    <tr onclick="showTxnDetail('${t.id}')" style="cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
       <td class="mono" style="font-weight:700;color:var(--amber)">${t.id}</td>
       <td>${t.table}</td>
       <td style="color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.items}</td>
       <td><span class="pill ${methodPills[t.method] || 'cash'}">${t.method.toUpperCase()}</span></td>
+      <td style="font-size:11px;color:var(--green)">${t.discountName || '-'}</td>
       <td class="mono" style="font-weight:700">${fmt(t.total)}</td>
       <td style="color:var(--text-dim)">${t.time}</td>
     </tr>
@@ -2740,6 +2778,63 @@ function saveStoreInfo() { showToast('Informasi toko disimpan', 'success'); }
 function saveTaxConfig() {
   const rate = document.getElementById('tax-rate').value;
   showToast(`Pajak ${rate}% disimpan `, 'success');
+}
+
+function showTxnDetail(id) {
+  const t = transactions.find(x => x.id === id);
+  if (!t) return;
+  const methodLabels = { cash:'Tunai', tunai:'Tunai', qris:'QRIS', gopay:'GoPay', ovo:'OVO', dana:'Dana', transfer:'Transfer Bank' };
+  const sub = t.subtotal || t.total;
+  const tax = t.tax || 0;
+  const disc = t.discount || 0;
+
+  let itemsHtml = '';
+  if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
+    itemsHtml = t.itemsDetail.map(i => `
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
+        <span>${i.qty}× ${i.name}</span>
+        <span style="font-family:'JetBrains Mono';color:var(--text-dim)">${fmt(i.price * i.qty)}</span>
+      </div>`).join('');
+  } else if (t.items) {
+    itemsHtml = t.items.split(', ').map(i => `
+      <div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-dim)">${i}</div>`).join('');
+  }
+
+  document.getElementById('txn-detail-content').innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div style="font-size:18px;font-weight:800;color:var(--amber)">${t.id}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${t.table} · ${t.time} · ${t.date}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;font-weight:700;background:var(--surface3);padding:4px 10px;border-radius:6px">${methodLabels[t.method] || t.method}</div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+      ${itemsHtml}
+    </div>
+
+    ${t.note ? `<div style="font-size:12px;color:var(--amber-dim);font-style:italic;margin-bottom:12px;padding:8px 12px;background:var(--surface2);border-radius:8px">Catatan: ${t.note}</div>` : ''}
+
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+      <div style="display:flex;justify-content:space-between;color:var(--text-dim)">
+        <span>Subtotal</span><span style="font-family:'JetBrains Mono'">${fmt(sub)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;color:var(--text-dim)">
+        <span>PPN 11%</span><span style="font-family:'JetBrains Mono'">${fmt(tax)}</span>
+      </div>
+      ${disc > 0 ? `
+      <div style="display:flex;justify-content:space-between;color:var(--green)">
+        <span>Diskon${t.discountName ? ` (${t.discountName})` : ''}</span>
+        <span style="font-family:'JetBrains Mono'">-${fmt(disc)}</span>
+      </div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
+        <span>Total</span><span style="font-family:'JetBrains Mono';color:var(--amber)">${fmt(t.total)}</span>
+      </div>
+    </div>`;
+
+  openModal('txn-detail-modal');
 }
 
 // Start
