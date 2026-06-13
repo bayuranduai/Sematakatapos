@@ -2329,12 +2329,6 @@ function updateTotalsWithDiscount() {
   document.getElementById('total').textContent = fmt(Math.max(0, total));
 }
 
-function getTotal() {
-  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * 0.11);
-  return Math.max(0, subtotal + tax - discountAmount);
-}
-
 // ═══════════════════════════════════════════════
 //  PAYMENT
 // ═══════════════════════════════════════════════
