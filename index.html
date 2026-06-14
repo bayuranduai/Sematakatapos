@@ -1388,15 +1388,20 @@
   <div class="shift-content">
     <div class="reports-header" style="margin-bottom:0">
       <h2>Pengeluaran</h2>
-      <input type="date" class="date-filter" id="expense-date-filter" onchange="renderExpenses()">
+      <select class="date-filter" id="expense-shift-filter" onchange="renderExpenses()" style="min-width:180px">
+        <option value="">-- Pilih Shift --</option>
+      </select>
     </div>
+
+    <!-- Shift status banner -->
+    <div id="expense-shift-banner" style="display:none;background:var(--surface);border:1px solid var(--green);border-radius:var(--radius);padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:10px"></div>
 
     <!-- Summary -->
     <div class="shift-stats" id="expense-summary"></div>
 
     <!-- Add Expense Form -->
     <div class="expense-form-card">
-      <div class="s-card-title" style="margin-bottom:12px">Tambah Pengeluaran</div>
+      <div class="s-card-title" style="margin-bottom:12px">Tambah Pengeluaran <span id="expense-shift-label" style="font-size:12px;color:var(--text-dim);font-weight:400"></span></div>
       <div class="expense-cats" id="expense-cat-pills">
         <button class="exp-cat-btn active" onclick="selectExpCat(this,'Bahan Baku')">Bahan Baku</button>
         <button class="exp-cat-btn" onclick="selectExpCat(this,'Operasional')">Operasional</button>
@@ -1420,7 +1425,7 @@
     <div class="report-card">
       <div class="section-title">Daftar Pengeluaran</div>
       <div id="expense-list">
-        <div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran hari ini</div>
+        <div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran</div>
       </div>
     </div>
   </div>
@@ -2118,7 +2123,7 @@ async function switchView(name) {
   if (name === 'settings') { showSettingsPanel('menu'); renderMenuMgmt(); }
   if (name === 'shift') renderShiftView();
   if (name === 'expenses') {
-    document.getElementById('expense-date-filter').value = localDateStr();
+    renderExpenseShiftFilter();
     renderExpenses();
   }
 }
@@ -3901,13 +3906,25 @@ function selectExpCat(btn, cat) {
   btn.classList.add('active');
 }
 
-async function loadExpensesFromDB(dateStr) {
-  if (!SUPABASE_CONFIGURED) return;
-  // WITA = UTC+8, jadi 14 Juni WITA = 13 Juni 16:00 UTC s/d 14 Juni 15:59 UTC
-  const from = dateStr + 'T00:00:00' + localTZOffset();
-  const to   = dateStr + 'T23:59:59' + localTZOffset();
+function renderExpenseShiftFilter() {
+  const sel = document.getElementById('expense-shift-filter');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">-- Pilih Shift --</option>';
+  if (currentShift) {
+    const opened = new Date(currentShift.opened_at).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'});
+    sel.innerHTML += '<option value="' + currentShift.id + '" ' + (prev == currentShift.id ? 'selected' : '') + '>🟢 ' + currentShift.kasir_name + ' — ' + opened + ' (Aktif)</option>';
+  }
+  allShifts.filter(s => s.status !== 'open').forEach(s => {
+    const opened = new Date(s.opened_at).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'});
+    sel.innerHTML += '<option value="' + s.id + '" ' + (prev == s.id ? 'selected' : '') + '>⚫ ' + s.kasir_name + ' — ' + opened + '</option>';
+  });
+  if (currentShift && !prev) sel.value = currentShift.id;
+}
+
+async function loadExpensesFromDB(shiftId) {
+  if (!SUPABASE_CONFIGURED || !shiftId) { expenses = []; return; }
   const { data, error } = await sb.from('expenses')
-    .select('*').gte('created_at', from).lte('created_at', to)
+    .select('*').eq('shift_id', shiftId)
     .order('created_at', { ascending: false });
   if (error) { console.error('Expenses load error:', error); return; }
   expenses = data || [];
@@ -3918,12 +3935,9 @@ async function addExpense() {
   const amount = parseInt(document.getElementById('expense-amount').value);
   if (!desc) { showToast('Keterangan tidak boleh kosong', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Jumlah tidak valid', 'error'); return; }
-
-  const newExp = {
-    category: selectedExpCat, description: desc, amount,
-    shift_id: currentShift?.id || null,
-  };
-
+  const shiftId = currentShift?.id || null;
+  if (!shiftId) { showToast('Buka shift dulu sebelum mencatat pengeluaran', 'error'); return; }
+  const newExp = { category: selectedExpCat, description: desc, amount, shift_id: shiftId };
   if (SUPABASE_CONFIGURED) {
     const { data, error } = await sb.from('expenses').insert(newExp).select().single();
     if (error) { console.error('Add expense error:', error); showToast('Gagal simpan pengeluaran', 'error'); return; }
@@ -3931,7 +3945,6 @@ async function addExpense() {
   } else {
     expenses.unshift({ ...newExp, id: Date.now(), created_at: new Date().toISOString() });
   }
-
   document.getElementById('expense-desc').value = '';
   document.getElementById('expense-amount').value = '';
   renderExpenses();
@@ -3940,45 +3953,81 @@ async function addExpense() {
 
 async function deleteExpense(id) {
   if (!confirm('Hapus pengeluaran ini?')) return;
-  if (SUPABASE_CONFIGURED) {
-    await sb.from('expenses').delete().eq('id', id);
-  }
+  if (SUPABASE_CONFIGURED) await sb.from('expenses').delete().eq('id', id);
   expenses = expenses.filter(e => e.id !== id);
   renderExpenses();
   showToast('Pengeluaran dihapus', 'info');
 }
 
 async function renderExpenses() {
-  const dateInput = document.getElementById('expense-date-filter');
-  if (!dateInput.value) dateInput.value = localDateStr();
-  const dateStr = dateInput.value;
+  const shiftId = document.getElementById('expense-shift-filter')?.value;
+  const selectedShift = allShifts.find(s => s.id == shiftId) || (currentShift?.id == shiftId ? currentShift : null);
+  await loadExpensesFromDB(shiftId);
 
-  await loadExpensesFromDB(dateStr);
+  const banner = document.getElementById('expense-shift-banner');
+  const shiftLabel = document.getElementById('expense-shift-label');
+  const addBtn = document.querySelector('#view-expenses .s-save-btn');
 
-  // Summary
+  if (selectedShift) {
+    const isActive = selectedShift.status === 'open';
+    if (shiftLabel) shiftLabel.textContent = '— ' + selectedShift.kasir_name + (isActive ? ' (Aktif)' : '');
+    banner.style.display = 'flex';
+    banner.style.borderColor = isActive ? 'var(--green)' : 'var(--border)';
+    banner.innerHTML = (isActive ? '🟢' : '⚫') +
+      ' <strong>' + selectedShift.kasir_name + '</strong>' +
+      ' &nbsp;·&nbsp; Modal Awal: <strong>' + fmt(selectedShift.modal_awal || 0) + '</strong>' +
+      (selectedShift.opened_at ? ' &nbsp;·&nbsp; Buka: ' + new Date(selectedShift.opened_at).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'}) : '');
+    if (addBtn) {
+      addBtn.disabled = !isActive;
+      addBtn.textContent = isActive ? '+ Catat Pengeluaran' : 'Shift sudah ditutup';
+    }
+  } else {
+    if (banner) banner.style.display = 'none';
+    if (shiftLabel) shiftLabel.textContent = '';
+  }
+
+  // Kas tunai masuk dari shift ini
+  let tunaiFisik = 0;
+  if (selectedShift) {
+    const shiftStart = new Date(selectedShift.opened_at);
+    const shiftEnd = selectedShift.closed_at ? new Date(selectedShift.closed_at) : new Date(9999,0,1);
+    const shiftTxns = transactions.filter(t => {
+      const tt = t.timestamp ? new Date(t.timestamp) : null;
+      return tt && tt >= shiftStart && tt <= shiftEnd;
+    });
+    tunaiFisik = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s + t.total, 0);
+  }
+
+  const modalAwal = selectedShift?.modal_awal || 0;
+  const KAS_CATS = ['Bahan Baku', 'Operasional', 'Lainnya'];
+  const NON_KAS_CATS = ['Gaji'];
   const totalExp = expenses.reduce((s, e) => s + e.amount, 0);
-  const txnsThatDay = transactions.filter(t => t.date === dateStr);
-  const revenue = txnsThatDay.reduce((s, t) => s + t.total, 0);
+  const expKas = expenses.filter(e => KAS_CATS.includes(e.category)).reduce((s, e) => s + e.amount, 0);
+  const expGaji = expenses.filter(e => NON_KAS_CATS.includes(e.category)).reduce((s, e) => s + e.amount, 0);
+  const saldoKas = modalAwal + tunaiFisik - expKas;
 
   document.getElementById('expense-summary').innerHTML = [
-    { label: 'Total Pengeluaran', val: fmt(totalExp), sub: expenses.length + ' item' },
-    { label: 'Pendapatan Hari Ini', val: fmt(revenue), sub: txnsThatDay.length + ' transaksi' },
-    { label: 'Saldo Bersih', val: fmt(revenue - totalExp), sub: 'pendapatan - pengeluaran' },
-  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:18px">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
+    { label: 'Pengeluaran Kas', val: fmt(expKas), sub: 'bahan baku + operasional', color: 'var(--red)' },
+    { label: 'Gaji', val: fmt(expGaji), sub: 'tidak ngurangi kas fisik', color: expGaji > 0 ? 'var(--amber)' : '' },
+    { label: 'Kas Tunai Masuk', val: fmt(tunaiFisik), sub: 'modal awal ' + fmt(modalAwal) },
+    { label: 'Saldo Kas', val: fmt(saldoKas), sub: 'kas - pengeluaran operasional', color: saldoKas >= 0 ? 'var(--green)' : 'var(--red)' },
+  ].map(s => '<div class="stat-card"><div class="s-label">' + s.label + '</div><div class="s-val" style="font-size:18px;' + (s.color ? 'color:'+s.color : '') + '">' + s.val + '</div><div class="s-sub">' + s.sub + '</div></div>').join('');
 
   const el = document.getElementById('expense-list');
   if (!expenses.length) {
-    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran pada tanggal ini</div>';
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran di shift ini</div>';
     return;
   }
-  el.innerHTML = expenses.map(e => `
-    <div class="expense-list-item">
-      <span class="eli-cat">${e.category}</span>
-      <span class="eli-desc">${e.description}</span>
-      <span class="eli-time">${new Date(e.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</span>
-      <span class="eli-amount">-${fmt(e.amount)}</span>
-      <button class="eli-del" onclick="deleteExpense(${e.id})">×</button>
-    </div>`).join('');
+  el.innerHTML = expenses.map(e => {
+    const isGaji = NON_KAS_CATS.includes(e.category);
+    return '<div class="expense-list-item">' +
+      '<span class="eli-cat" style="' + (isGaji ? 'background:var(--amber-dim);color:var(--amber-lt)' : '') + '">' + e.category + '</span>' +
+      '<span class="eli-desc">' + e.description + (isGaji ? ' <span style="font-size:10px;color:var(--amber-dim)">(non-kas)</span>' : '') + '</span>' +
+      '<span class="eli-time">' + new Date(e.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}) + '</span>' +
+      '<span class="eli-amount" style="' + (isGaji ? 'color:var(--amber)' : '') + '">-' + fmt(e.amount) + '</span>' +
+      '<button class="eli-del" onclick="deleteExpense(' + e.id + ')">×</button>' +
+      '</div>';
+  }).join('');
 }
 
 // ── START ──
