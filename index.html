@@ -1003,7 +1003,7 @@
     </div>
     <div class="cart-footer">
       <div class="subtotal-row"><span>Subtotal</span><span class="val" id="subtotal">Rp 0</span></div>
-      <div class="subtotal-row"><span>PPN 11%</span><span class="val" id="tax">Rp 0</span></div>
+      <div class="subtotal-row"><span id="tax-label">PPN 11%</span><span class="val" id="tax">Rp 0</span></div>
       <div class="subtotal-row" id="discount-row" style="display:none;color:var(--green)"><span>Diskon</span><span class="val" id="discount-val" style="color:var(--green)">-Rp 0</span></div>
       <div style="margin-bottom:8px">
         <select class="table-select" id="discount-select" style="width:100%;font-size:12px;padding:7px 10px" onchange="applyDiscount()">
@@ -2103,6 +2103,10 @@ function localTZOffset() {
   return (offset >= 0 ? '+' : '-') + h + ':' + m;
 }
 
+// ── TAX CONFIG (loaded from settings) ──
+let TAX_RATE = 0.11; // default 11%, override dari DB/localStorage
+let TAX_ENABLED = true;
+
 function updateClock() {
   const now = new Date();
   document.getElementById('clock').textContent =
@@ -2229,7 +2233,7 @@ function renderCart() {
 }
 
 function updateTotals(subtotal) {
-  const tax = Math.round(subtotal * 0.11);
+  const tax = Math.round(subtotal * TAX_RATE);
   const total = subtotal + tax;
   document.getElementById('subtotal').textContent = fmt(subtotal);
   document.getElementById('tax').textContent = fmt(tax);
@@ -2238,7 +2242,7 @@ function updateTotals(subtotal) {
 
 function getTotal() {
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * 0.11);
+  const tax = Math.round(subtotal * TAX_RATE);
   return Math.max(0, subtotal + tax - discountAmount);
 }
 
@@ -2402,7 +2406,7 @@ function applyDiscount() {
 
 function updateTotalsWithDiscount() {
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * 0.11);
+  const tax = Math.round(subtotal * TAX_RATE);
   let discount = 0;
 
   if (activeDiscountId) {
@@ -2428,6 +2432,8 @@ function updateTotalsWithDiscount() {
 
   document.getElementById('subtotal').textContent = fmt(subtotal);
   document.getElementById('tax').textContent = fmt(tax);
+  const taxLabel = document.getElementById('tax-label');
+  if (taxLabel) taxLabel.textContent = TAX_ENABLED ? 'PPN ' + Math.round(TAX_RATE*100) + '%' : 'Pajak (0%)';
 
   const discRow = document.getElementById('discount-row');
   if (discount > 0) {
@@ -2558,7 +2564,7 @@ async function finishOrder(method) {
   const orderNum = '#' + (++orderCounter);
   const total = getTotal();
   const subtotal = cart.reduce((s,c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * 0.11);
+  const tax = Math.round(subtotal * TAX_RATE);
   const now = new Date();
 
   const order = {
@@ -3528,10 +3534,14 @@ async function loadStoreInfo() {
       if (data.footer)  document.getElementById('store-footer').value  = data.footer;
       // Tax & service settings
       if (data.tax_enabled !== null) {
+        TAX_ENABLED = data.tax_enabled;
         document.getElementById('toggle-tax').checked = data.tax_enabled;
         updateTaxDisplay();
       }
-      if (data.tax_rate) document.getElementById('tax-rate').value = data.tax_rate;
+      if (data.tax_rate) {
+        TAX_RATE = data.tax_rate / 100;
+        document.getElementById('tax-rate').value = data.tax_rate;
+      }
       if (data.service_enabled !== null) {
         document.getElementById('toggle-service').checked = data.service_enabled;
         updateServiceDisplay();
@@ -3551,6 +3561,8 @@ async function loadStoreInfo() {
       const taxSaved = localStorage.getItem('taxConfig');
       if (taxSaved) {
         const tc = JSON.parse(taxSaved);
+        TAX_ENABLED = tc.taxEnabled;
+        TAX_RATE = tc.taxRate / 100;
         document.getElementById('toggle-tax').checked = tc.taxEnabled;
         document.getElementById('tax-rate').value = tc.taxRate;
         document.getElementById('toggle-service').checked = tc.serviceEnabled;
@@ -3566,6 +3578,10 @@ async function saveTaxConfig() {
   const taxRate = parseInt(document.getElementById('tax-rate').value) || 11;
   const serviceEnabled = document.getElementById('toggle-service').checked;
   const serviceRate = parseInt(document.getElementById('service-rate').value) || 5;
+
+  // Update globals immediately
+  TAX_ENABLED = taxEnabled;
+  TAX_RATE = taxEnabled ? taxRate / 100 : 0;
 
   if (SUPABASE_CONFIGURED) {
     const { error } = await sb.from('store_settings').update({
