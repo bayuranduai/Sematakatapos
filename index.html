@@ -1507,9 +1507,11 @@
   <div class="modal">
     <div class="modal-title">Struk Pembayaran</div>
     <div id="receipt-content"></div>
-    <div style="display:flex;gap:8px">
-      <button class="confirm-btn" style="background:var(--amber);color:#1A0F00" onclick="printReceipt()">Cetak Struk</button>
-      <button class="k-btn" onclick="closeModal('receipt-modal');resetCart()" style="flex:1;margin-top:8px">Selesai</button>
+    <div style="display:flex;gap:8px;flex-direction:column">
+      <button class="confirm-btn" style="background:var(--amber);color:#1A0F00" onclick="printReceipt()">
+        🖨 Cetak / Share ke Printer
+      </button>
+      <button class="k-btn" onclick="closeModal('receipt-modal');resetCart()" style="margin-top:0">Selesai Tanpa Cetak</button>
     </div>
   </div>
 </div>
@@ -2103,7 +2105,15 @@ function localTZOffset() {
   return (offset >= 0 ? '+' : '-') + h + ':' + m;
 }
 
-// ── TAX CONFIG (loaded from settings) ──
+// ── STORE INFO (global, loaded from DB) ──
+let STORE = {
+  name: 'SEMATA KATA',
+  tagline: '',
+  address: 'Jl. Kopi Nusantara No. 1, Bali',
+  phone: '0361-XXXXXX',
+  wifi: '',
+  footer: 'Terima kasih telah berkunjung! Selamat menikmati',
+};
 let TAX_RATE = 0.11; // default 11%, override dari DB/localStorage
 let TAX_ENABLED = true;
 
@@ -3116,16 +3126,23 @@ function showReceipt(order) {
   closeModal('payment-modal');
   closeModal('cash-modal');
 
+  // Ambil info toko dari global STORE
+  const storeName = STORE.name;
+  const storeAddress = STORE.address;
+  const storePhone = STORE.phone;
+  const storeFooter = STORE.footer;
+  const taxRate = Math.round(TAX_RATE * 100);
+
   const now = order.time;
   const receiptEl = document.getElementById('receipt-content');
   receiptEl.innerHTML = `
     <div class="receipt">
-      <div class="receipt-title">SEMATA KATA</div>
-      <div class="receipt-sub">Jl. Kopi Nusantara No. 1, Bali<br>Telp: 0361-XXXXXX</div>
+      <div class="receipt-title">${storeName}</div>
+      <div class="receipt-sub">${storeAddress}${storePhone ? '<br>Telp: ' + storePhone : ''}</div>
       <div class="receipt-divider"></div>
       <div class="receipt-row"><span>Order</span><span>${order.id}</span></div>
       <div class="receipt-row"><span>Meja</span><span>${order.tableName}</span></div>
-      <div class="receipt-row"><span>Kasir</span><span>${now.toLocaleString('id-ID')}</span></div>
+      <div class="receipt-row"><span>Waktu</span><span>${now.toLocaleString('id-ID')}</span></div>
       <div class="receipt-divider"></div>
       ${order.items.map(i => `
         <div class="receipt-row">
@@ -3135,19 +3152,88 @@ function showReceipt(order) {
       ${order.note ? `<div style="font-size:10px;color:#888;margin-top:4px">Catatan: ${order.note}</div>` : ''}
       <div class="receipt-divider"></div>
       <div class="receipt-row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
-      <div class="receipt-row"><span>PPN 11%</span><span>${fmt(order.tax)}</span></div>
+      ${TAX_ENABLED && order.tax > 0 ? `<div class="receipt-row"><span>PPN ${taxRate}%</span><span>${fmt(order.tax)}</span></div>` : ''}
       <div class="receipt-row total bold"><span>TOTAL</span><span>${fmt(order.total)}</span></div>
       <div class="receipt-divider"></div>
       <div class="receipt-row"><span>Metode</span><span>${order.method}</span></div>
-      <div class="receipt-footer">Terima kasih telah berkunjung!<br>Selamat menikmati!</div>
+      <div class="receipt-footer">${storeFooter}</div>
     </div>`;
+
+  // Simpan order untuk dipakai saat print
+  receiptEl.dataset.orderId = order.id;
 
   openModal('receipt-modal');
 }
 
+function generateReceiptText(order) {
+  const W = 32;
+  const storeName = STORE.name;
+  const storeAddress = STORE.address;
+  const storePhone = STORE.phone;
+  const storeFooter = STORE.footer;
+  const taxRate = Math.round(TAX_RATE * 100);
+
+  const line = '-'.repeat(W);
+  const center = s => s.padStart(Math.floor((W + s.length) / 2)).padEnd(W);
+  const row = (l, r) => {
+    const maxL = W - r.length - 1;
+    return l.substring(0, maxL).padEnd(maxL) + ' ' + r;
+  };
+
+  let txt = '';
+  txt += center(storeName) + '\n';
+  if (storeAddress) txt += center(storeAddress) + '\n';
+  if (storePhone) txt += center('Telp: ' + storePhone) + '\n';
+  txt += line + '\n';
+  txt += row('Order:', order.id) + '\n';
+  txt += row('Meja:', order.tableName) + '\n';
+  txt += row('Waktu:', order.time.toLocaleString('id-ID', {dateStyle:'short', timeStyle:'short'})) + '\n';
+  txt += line + '\n';
+  order.items.forEach(i => {
+    const name = i.qty + 'x ' + i.name;
+    const price = fmt(i.price * i.qty);
+    txt += row(name, price) + '\n';
+  });
+  if (order.note) txt += 'Catatan: ' + order.note + '\n';
+  txt += line + '\n';
+  txt += row('Subtotal', fmt(order.subtotal)) + '\n';
+  if (TAX_ENABLED && order.tax > 0) txt += row('PPN ' + taxRate + '%', fmt(order.tax)) + '\n';
+  txt += row('TOTAL', fmt(order.total)) + '\n';
+  txt += line + '\n';
+  txt += row('Metode:', order.method) + '\n';
+  txt += line + '\n';
+  txt += center(storeFooter) + '\n\n\n';
+  return txt;
+}
+
 function printReceipt() {
-  showToast('Mencetak struk... 🖨', 'info');
-  setTimeout(() => showToast('Struk berhasil dicetak!', 'success'), 1200);
+  // Cari order dari modal yang sedang terbuka
+  const orderId = document.getElementById('receipt-content').dataset.orderId;
+  const order = orders.find(o => o.id === orderId) ||
+    transactions.find(t => t.id === orderId);
+
+  if (!order) {
+    window.print();
+    return;
+  }
+
+  const text = generateReceiptText(order);
+
+  // Coba Web Share API (Android Chrome) — share teks ke Thermer/app printer
+  if (navigator.share) {
+    navigator.share({
+      title: 'Struk ' + order.id,
+      text: text,
+    }).then(() => {
+      showToast('Struk dibagikan ke app printer ✅', 'success');
+    }).catch(e => {
+      // User cancel atau tidak ada app — fallback ke print dialog
+      if (e.name !== 'AbortError') window.print();
+    });
+  } else {
+    // Desktop — buka print dialog biasa
+    window.print();
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -3512,6 +3598,8 @@ async function saveStoreInfo() {
     wifi:    document.getElementById('store-wifi').value,
     footer:  document.getElementById('store-footer').value,
   };
+  // Update global immediately
+  Object.assign(STORE, info);
   if (SUPABASE_CONFIGURED) {
     const { error } = await sb.from('store_settings').update(info).eq('id', 1);
     if (error) { console.error('Save store error:', error); showToast('Gagal simpan', 'error'); return; }
@@ -3526,12 +3614,12 @@ async function loadStoreInfo() {
     if (SUPABASE_CONFIGURED) {
       const { data, error } = await sb.from('store_settings').select('*').eq('id', 1).single();
       if (error || !data) return;
-      if (data.name)    document.getElementById('store-name').value    = data.name;
-      if (data.tagline) document.getElementById('store-tagline').value = data.tagline;
-      if (data.address) document.getElementById('store-address').value = data.address;
-      if (data.phone)   document.getElementById('store-phone').value   = data.phone;
-      if (data.wifi)    document.getElementById('store-wifi').value    = data.wifi;
-      if (data.footer)  document.getElementById('store-footer').value  = data.footer;
+      if (data.name)    { STORE.name    = data.name;    document.getElementById('store-name').value    = data.name; }
+      if (data.tagline) { STORE.tagline = data.tagline; document.getElementById('store-tagline').value = data.tagline; }
+      if (data.address) { STORE.address = data.address; document.getElementById('store-address').value = data.address; }
+      if (data.phone)   { STORE.phone   = data.phone;   document.getElementById('store-phone').value   = data.phone; }
+      if (data.wifi)    { STORE.wifi    = data.wifi;    document.getElementById('store-wifi').value    = data.wifi; }
+      if (data.footer)  { STORE.footer  = data.footer;  document.getElementById('store-footer').value  = data.footer; }
       // Tax & service settings
       if (data.tax_enabled !== null) {
         TAX_ENABLED = data.tax_enabled;
@@ -3551,12 +3639,12 @@ async function loadStoreInfo() {
       const saved = localStorage.getItem('storeInfo');
       if (saved) {
         const info = JSON.parse(saved);
-        if (info.name)    document.getElementById('store-name').value    = info.name;
-        if (info.tagline) document.getElementById('store-tagline').value = info.tagline;
-        if (info.address) document.getElementById('store-address').value = info.address;
-        if (info.phone)   document.getElementById('store-phone').value   = info.phone;
-        if (info.wifi)    document.getElementById('store-wifi').value    = info.wifi;
-        if (info.footer)  document.getElementById('store-footer').value  = info.footer;
+        if (info.name)    { STORE.name    = info.name;    document.getElementById('store-name').value    = info.name; }
+        if (info.tagline) { STORE.tagline = info.tagline; document.getElementById('store-tagline').value = info.tagline; }
+        if (info.address) { STORE.address = info.address; document.getElementById('store-address').value = info.address; }
+        if (info.phone)   { STORE.phone   = info.phone;   document.getElementById('store-phone').value   = info.phone; }
+        if (info.wifi)    { STORE.wifi    = info.wifi;    document.getElementById('store-wifi').value    = info.wifi; }
+        if (info.footer)  { STORE.footer  = info.footer;  document.getElementById('store-footer').value  = info.footer; }
       }
       const taxSaved = localStorage.getItem('taxConfig');
       if (taxSaved) {
