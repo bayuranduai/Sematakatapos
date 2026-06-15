@@ -2984,6 +2984,9 @@ function syncDateTo() {
   const to = document.getElementById('date-to').value;
   if (from && !to) document.getElementById('date-to').value = from;
 }
+
+// Cari nama kasir berdasarkan timestamp transaksi (cocokkan ke shift)
+function getKasirForTxn(txn) {
   if (!allShifts || !allShifts.length) return '-';
   const txTime = txn.timestamp ? new Date(txn.timestamp) : null;
   if (!txTime) return '-';
