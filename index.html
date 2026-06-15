@@ -1937,14 +1937,14 @@ async function loadTransactionsFromDB() {
 }
 
 async function loadTransactionsByRange(fromDate, toDate) {
-  if (!SUPABASE_CONFIGURED) return;
+  if (!SUPABASE_CONFIGURED) return null;
   const { data, error } = await sb.from('transactions')
     .select('*')
     .gte('created_at', fromDate + 'T00:00:00' + localTZOffset())
     .lte('created_at', toDate + 'T23:59:59' + localTZOffset())
     .order('created_at', { ascending: false });
-  if (error) { console.error('loadTransactionsByRange error:', error); return; }
-  if (data) transactions = data.map(mapTransaction);
+  if (error) { console.error('loadTransactionsByRange error:', error); return null; }
+  return data ? data.map(mapTransaction) : [];
 }
 
 function mapTransaction(r) {
@@ -2942,7 +2942,8 @@ async function renderReports() {
   const customRange = document.getElementById('custom-date-range');
   customRange.style.display = period === 'custom' ? 'flex' : 'none';
 
-  // Load transactions dari DB sesuai periode
+  // Load transactions untuk periode — simpan di variabel lokal, JANGAN replace global
+  let reportTxns = null;
   if (SUPABASE_CONFIGURED) {
     const todayStr = localDateStr();
     let fromDate, toDate;
@@ -2954,11 +2955,12 @@ async function renderReports() {
       toDate = document.getElementById('date-to').value;
     }
     if (fromDate && toDate) {
-      await loadTransactionsByRange(fromDate, toDate);
+      reportTxns = await loadTransactionsByRange(fromDate, toDate);
     }
   }
 
-  const filtered = getFilteredTransactions();
+  // Pakai data dari DB kalau ada, fallback ke global transactions
+  const filtered = reportTxns !== null ? reportTxns : getFilteredTransactions();
 
   // Shift info bar — tampilkan kasir yang bertugas di periode ini
   const shiftBar = document.getElementById('shift-info-bar');
