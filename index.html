@@ -2778,6 +2778,80 @@ function renderTopItems(txns) {
 
 let selectedChartDate = null;
 
+async function renderStatCards(txns, dateStr) {
+  // Load expenses untuk periode yang ditampilkan
+  let totalExpenses = 0;
+  let expKas = 0;
+  let modalAwal = 0;
+  let tunaiFisik = 0;
+
+  if (SUPABASE_CONFIGURED && dateStr) {
+    // Expenses hari itu
+    const { data: expData } = await sb.from('expenses')
+      .select('category,amount')
+      .gte('created_at', dateStr + 'T00:00:00' + localTZOffset())
+      .lte('created_at', dateStr + 'T23:59:59' + localTZOffset());
+    if (expData) {
+      const KAS_CATS = ['Bahan Baku','Operasional','Lainnya'];
+      totalExpenses = expData.reduce((s,e) => s+e.amount, 0);
+      expKas = expData.filter(e => KAS_CATS.includes(e.category)).reduce((s,e) => s+e.amount, 0);
+    }
+
+    // Modal awal shift yang buka di hari itu
+    const dayShifts = allShifts.filter(s => {
+      const sDate = localDateStr(new Date(s.opened_at));
+      return sDate === dateStr;
+    });
+    modalAwal = dayShifts.reduce((s,sh) => s + (sh.modal_awal||0), 0);
+
+    // Tunai dari transaksi hari itu
+    tunaiFisik = txns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s+t.total, 0);
+  } else if (SUPABASE_CONFIGURED) {
+    // Periode penuh — pakai totalExpenses dari renderReports
+    const period = document.getElementById('report-period').value;
+    const todayStr = localDateStr();
+    let fromDate, toDate;
+    if (period === 'today') { fromDate = toDate = todayStr; }
+    else if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromDate = localDateStr(d); toDate = todayStr; }
+    else if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
+    else if (period === 'custom') { fromDate = document.getElementById('date-from').value; toDate = document.getElementById('date-to').value; }
+    if (fromDate && toDate) {
+      const { data: expData } = await sb.from('expenses')
+        .select('category,amount')
+        .gte('created_at', fromDate + 'T00:00:00' + localTZOffset())
+        .lte('created_at', toDate + 'T23:59:59' + localTZOffset());
+      if (expData) {
+        const KAS_CATS = ['Bahan Baku','Operasional','Lainnya'];
+        totalExpenses = expData.reduce((s,e) => s+e.amount, 0);
+        expKas = expData.filter(e => KAS_CATS.includes(e.category)).reduce((s,e) => s+e.amount, 0);
+      }
+      // Modal awal semua shift dalam periode
+      const periodShifts = allShifts.filter(s => {
+        const sDate = localDateStr(new Date(s.opened_at));
+        return sDate >= fromDate && sDate <= toDate;
+      });
+      modalAwal = periodShifts.reduce((s,sh) => s + (sh.modal_awal||0), 0);
+      tunaiFisik = txns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s+t.total, 0);
+    }
+  }
+
+  const { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin } = calcProfitData(txns);
+  const avgOrder = txns.length ? Math.round(totalRevenue / txns.length) : 0;
+  const totalItems = txns.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
+  const saldoHarian = modalAwal + tunaiFisik - expKas;
+
+  document.getElementById('stat-grid').innerHTML = [
+    { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length + ' transaksi' },
+    { label:'Omset Bersih', val: hppAvailable ? fmt(omsetBersih) : '—', sub: hppAvailable ? 'Setelah HPP & Pajak' : 'Isi HPP di menu' },
+    { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) : 'Isi HPP di menu' },
+    { label:'Total Pengeluaran', val: fmt(totalExpenses), sub: 'operasional periode ini' },
+    { label:'Saldo Harian', val: fmt(saldoHarian), sub: 'modal + tunai - pengeluaran', color: saldoHarian >= 0 ? 'var(--green)' : 'var(--red)' },
+    { label:'Rata-rata Order', val: fmt(avgOrder), sub: 'per transaksi' },
+    { label:'Total Diskon', val: fmt(totalDiscount), sub: 'diberikan' },
+    { label:'Item Terjual', val: totalItems, sub: 'total item' },
+  ].map(s => '<div class="stat-card"><div class="s-label">' + s.label + '</div><div class="s-val" style="' + (s.color ? 'color:'+s.color : '') + '">' + s.val + '</div><div class="s-sub">' + s.sub + '</div></div>').join('');
+}
+
 function filterTxnByDate(dateStr) {
   // Toggle — klik tanggal yang sama = reset
   if (selectedChartDate === dateStr) {
@@ -2797,10 +2871,11 @@ function filterTxnByDate(dateStr) {
   document.getElementById('txn-table-label').textContent = 'Transaksi — ' + label;
   document.getElementById('txn-reset-btn').style.display = 'block';
 
-  // Render tabel dan top items hanya untuk tanggal ini
+  // Render tabel, top items, dan stat cards untuk tanggal ini
   const dateTxns = transactions.filter(t => t.date === dateStr);
   renderTxnTable(dateTxns);
   renderTopItems(dateTxns);
+  renderStatCards(dateTxns, dateStr);
 }
 
 function resetTxnFilter() {
@@ -2811,6 +2886,7 @@ function resetTxnFilter() {
   const filtered = getFilteredTransactions();
   renderTxnTable(filtered);
   renderTopItems(filtered);
+  renderStatCards(filtered, null);
 }
 
 function renderTxnTable(txns) {
@@ -2858,24 +2934,6 @@ async function renderReports() {
 
   const filtered = getFilteredTransactions();
 
-  // Load pengeluaran untuk periode yang dipilih
-  let totalExpenses = 0;
-  if (SUPABASE_CONFIGURED) {
-    const todayStr = localDateStr();
-    let fromDate, toDate;
-    if (period === 'today') { fromDate = toDate = todayStr; }
-    else if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromDate = localDateStr(d); toDate = todayStr; }
-    else if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
-    else if (period === 'custom') { fromDate = document.getElementById('date-from').value; toDate = document.getElementById('date-to').value; }
-    if (fromDate && toDate) {
-      const { data: expData } = await sb.from('expenses')
-        .select('amount')
-        .gte('created_at', fromDate + 'T00:00:00' + localTZOffset())
-        .lte('created_at', toDate + 'T23:59:59' + localTZOffset());
-      if (expData) totalExpenses = expData.reduce((s, e) => s + e.amount, 0);
-    }
-  }
-
   // Shift info bar — tampilkan kasir yang bertugas di periode ini
   const shiftBar = document.getElementById('shift-info-bar');
   if (allShifts.length) {
@@ -2913,16 +2971,7 @@ async function renderReports() {
   const avgOrder = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
   const totalItems = filtered.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
 
-  document.getElementById('stat-grid').innerHTML = [
-    { label:'Omset Kotor', val: fmt(omsetKotor), sub: filtered.length + ' transaksi' },
-    { label:'Omset Bersih', val: hppAvailable ? fmt(omsetBersih) : '—', sub: hppAvailable ? 'Setelah HPP & Pajak' : 'Isi HPP di menu' },
-    { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) : 'Isi HPP di menu' },
-    { label:'Total Pengeluaran', val: fmt(totalExpenses), sub: 'operasional periode ini' },
-    { label:'Laba Bersih', val: fmt(omsetKotor - totalExpenses), sub: 'omset - pengeluaran', color: (omsetKotor - totalExpenses) >= 0 ? 'var(--green)' : 'var(--red)' },
-    { label:'Rata-rata Order', val: fmt(avgOrder), sub: 'per transaksi' },
-    { label:'Total Diskon', val: fmt(totalDiscount), sub: 'diberikan' },
-    { label:'Item Terjual', val: totalItems, sub: 'total item' },
-  ].map(s => '<div class="stat-card"><div class="s-label">' + s.label + '</div><div class="s-val" style="' + (s.color ? 'color:'+s.color : '') + '">' + s.val + '</div><div class="s-sub">' + s.sub + '</div></div>').join('');
+  await renderStatCards(filtered, null);
 
   // Grand Omset Chart — bar per hari dalam bulan berjalan (selalu bulan ini)
   const chartNow = new Date();
