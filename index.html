@@ -1933,31 +1933,41 @@ async function loadTransactionsFromDB() {
   const { data, error } = await sb.from('transactions')
     .select('*').order('created_at', { ascending: false }).limit(50);
   if (error) { console.error('Transactions load error:', error); return; }
-  if (data) {
-    transactions = data.map(r => {
-      const d = new Date(r.created_at);
-      // getFullYear/Month/Date pakai timezone lokal browser (bukan UTC)
-      const dateStr = d.getFullYear() + '-' +
-        String(d.getMonth()+1).padStart(2,'0') + '-' +
-        String(d.getDate()).padStart(2,'0');
-      const timeStr = String(d.getHours()).padStart(2,'0') + ':' +
-        String(d.getMinutes()).padStart(2,'0');
-      return {
-        id: r.order_number, table: r.table_name,
-        items: r.items_summary, method: r.payment_method,
-        total: r.total,
-        subtotal: r.subtotal || r.total,
-        tax: r.tax || 0,
-        discount: r.discount_amount || 0,
-        discountName: r.discount_name || '',
-        note: r.note || '',
-        itemsDetail: r.items_detail || null,
-        time: timeStr,
-        date: dateStr,
-        timestamp: r.created_at,
-      };
-    });
-  }
+  if (data) transactions = data.map(mapTransaction);
+}
+
+async function loadTransactionsByRange(fromDate, toDate) {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data, error } = await sb.from('transactions')
+    .select('*')
+    .gte('created_at', fromDate + 'T00:00:00' + localTZOffset())
+    .lte('created_at', toDate + 'T23:59:59' + localTZOffset())
+    .order('created_at', { ascending: false });
+  if (error) { console.error('loadTransactionsByRange error:', error); return; }
+  if (data) transactions = data.map(mapTransaction);
+}
+
+function mapTransaction(r) {
+  const d = new Date(r.created_at);
+  const dateStr = d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+  const timeStr = String(d.getHours()).padStart(2,'0') + ':' +
+    String(d.getMinutes()).padStart(2,'0');
+  return {
+    id: r.order_number, table: r.table_name,
+    items: r.items_summary, method: r.payment_method,
+    total: r.total,
+    subtotal: r.subtotal || r.total,
+    tax: r.tax || 0,
+    discount: r.discount_amount || 0,
+    discountName: r.discount_name || '',
+    note: r.note || '',
+    itemsDetail: r.items_detail || null,
+    time: timeStr,
+    date: dateStr,
+    timestamp: r.created_at,
+  };
 }
 
 // ═══════════════════════════════════════════════
@@ -2931,6 +2941,22 @@ async function renderReports() {
   const period = document.getElementById('report-period').value;
   const customRange = document.getElementById('custom-date-range');
   customRange.style.display = period === 'custom' ? 'flex' : 'none';
+
+  // Load transactions dari DB sesuai periode
+  if (SUPABASE_CONFIGURED) {
+    const todayStr = localDateStr();
+    let fromDate, toDate;
+    if (period === 'today') { fromDate = toDate = todayStr; }
+    else if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromDate = localDateStr(d); toDate = todayStr; }
+    else if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
+    else if (period === 'custom') {
+      fromDate = document.getElementById('date-from').value;
+      toDate = document.getElementById('date-to').value;
+    }
+    if (fromDate && toDate) {
+      await loadTransactionsByRange(fromDate, toDate);
+    }
+  }
 
   const filtered = getFilteredTransactions();
 
