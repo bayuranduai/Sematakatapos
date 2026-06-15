@@ -1399,7 +1399,7 @@
     <div class="reports-header" style="margin-bottom:0">
       <h2>Pengeluaran</h2>
       <select class="date-filter" id="expense-shift-filter" onchange="renderExpenses()" style="min-width:180px">
-        <option value="">-- Pilih Shift --</option>
+        <option value="">Semua Shift</option>
       </select>
     </div>
 
@@ -4177,7 +4177,7 @@ function selectExpCat(btn, cat) {
 function renderExpenseShiftFilter() {
   const sel = document.getElementById('expense-shift-filter');
   const prev = sel.value;
-  sel.innerHTML = '<option value="">-- Pilih Shift --</option>';
+  sel.innerHTML = '<option value="">Semua Shift</option>';
   if (currentShift) {
     const opened = new Date(currentShift.opened_at).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'});
     sel.innerHTML += '<option value="' + currentShift.id + '" ' + (prev == currentShift.id ? 'selected' : '') + '>🟢 ' + currentShift.kasir_name + ' — ' + opened + ' (Aktif)</option>';
@@ -4190,10 +4190,10 @@ function renderExpenseShiftFilter() {
 }
 
 async function loadExpensesFromDB(shiftId) {
-  if (!SUPABASE_CONFIGURED || !shiftId) { expenses = []; return; }
-  const { data, error } = await sb.from('expenses')
-    .select('*').eq('shift_id', shiftId)
-    .order('created_at', { ascending: false });
+  if (!SUPABASE_CONFIGURED) { expenses = []; return; }
+  let query = sb.from('expenses').select('*').order('created_at', { ascending: false });
+  if (shiftId) query = query.eq('shift_id', shiftId);
+  const { data, error } = await query;
   if (error) { console.error('Expenses load error:', error); return; }
   expenses = data || [];
 }
