@@ -2258,7 +2258,7 @@ function renderCart() {
 }
 
 function updateTotals(subtotal) {
-  const tax = Math.round(subtotal * TAX_RATE);
+  const tax = TAX_ENABLED ? Math.round(subtotal * TAX_RATE) : 0;
   const total = subtotal + tax;
   document.getElementById('subtotal').textContent = fmt(subtotal);
   document.getElementById('tax').textContent = fmt(tax);
@@ -2267,7 +2267,7 @@ function updateTotals(subtotal) {
 
 function getTotal() {
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * TAX_RATE);
+  const tax = TAX_ENABLED ? Math.round(subtotal * TAX_RATE) : 0;
   return Math.max(0, subtotal + tax - discountAmount);
 }
 
@@ -2431,7 +2431,7 @@ function applyDiscount() {
 
 function updateTotalsWithDiscount() {
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * TAX_RATE);
+  const tax = TAX_ENABLED ? Math.round(subtotal * TAX_RATE) : 0;
   let discount = 0;
 
   if (activeDiscountId) {
@@ -2589,7 +2589,7 @@ async function finishOrder(method) {
   const orderNum = '#' + (++orderCounter);
   const total = getTotal();
   const subtotal = cart.reduce((s,c) => s + c.price * c.qty, 0);
-  const tax = Math.round(subtotal * TAX_RATE);
+  const tax = TAX_ENABLED ? Math.round(subtotal * TAX_RATE) : 0;
   const now = new Date();
 
   const order = {
