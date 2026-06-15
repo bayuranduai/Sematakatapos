@@ -1398,13 +1398,8 @@
   <div class="shift-content">
     <div class="reports-header" style="margin-bottom:0">
       <h2>Pengeluaran</h2>
-      <select class="date-filter" id="expense-shift-filter" onchange="renderExpenses()" style="min-width:180px">
-        <option value="">Semua Shift</option>
-      </select>
+      <input type="date" class="date-filter" id="expense-date-filter" onchange="renderExpenses()">
     </div>
-
-    <!-- Shift status banner -->
-    <div id="expense-shift-banner" style="display:none;background:var(--surface);border:1px solid var(--green);border-radius:var(--radius);padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:10px"></div>
 
     <!-- Summary -->
     <div class="shift-stats" id="expense-summary"></div>
@@ -2157,7 +2152,7 @@ async function switchView(name) {
   if (name === 'settings') { showSettingsPanel('menu'); renderMenuMgmt(); }
   if (name === 'shift') renderShiftView();
   if (name === 'expenses') {
-    renderExpenseShiftFilter();
+    document.getElementById('expense-date-filter').value = localDateStr();
     renderExpenses();
   }
 }
@@ -4189,10 +4184,14 @@ function renderExpenseShiftFilter() {
   if (currentShift && !prev) sel.value = currentShift.id;
 }
 
-async function loadExpensesFromDB(shiftId) {
+async function loadExpensesFromDB(dateStr) {
   if (!SUPABASE_CONFIGURED) { expenses = []; return; }
   let query = sb.from('expenses').select('*').order('created_at', { ascending: false });
-  if (shiftId) query = query.eq('shift_id', shiftId);
+  if (dateStr) {
+    query = query
+      .gte('created_at', dateStr + 'T00:00:00' + localTZOffset())
+      .lte('created_at', dateStr + 'T23:59:59' + localTZOffset());
+  }
   const { data, error } = await query;
   if (error) { console.error('Expenses load error:', error); return; }
   expenses = data || [];
@@ -4228,62 +4227,53 @@ async function deleteExpense(id) {
 }
 
 async function renderExpenses() {
-  const shiftId = document.getElementById('expense-shift-filter')?.value;
-  const selectedShift = allShifts.find(s => s.id == shiftId) || (currentShift?.id == shiftId ? currentShift : null);
-  await loadExpensesFromDB(shiftId);
+  const dateInput = document.getElementById('expense-date-filter');
+  if (!dateInput.value) dateInput.value = localDateStr();
+  const dateStr = dateInput.value;
 
-  const banner = document.getElementById('expense-shift-banner');
+  await loadExpensesFromDB(dateStr);
+
+  // Info shift yang aktif
   const shiftLabel = document.getElementById('expense-shift-label');
   const addBtn = document.querySelector('#view-expenses .s-save-btn');
-
-  if (selectedShift) {
-    const isActive = selectedShift.status === 'open';
-    if (shiftLabel) shiftLabel.textContent = '— ' + selectedShift.kasir_name + (isActive ? ' (Aktif)' : '');
-    banner.style.display = 'flex';
-    banner.style.borderColor = isActive ? 'var(--green)' : 'var(--border)';
-    banner.innerHTML = (isActive ? '🟢' : '⚫') +
-      ' <strong>' + selectedShift.kasir_name + '</strong>' +
-      ' &nbsp;·&nbsp; Modal Awal: <strong>' + fmt(selectedShift.modal_awal || 0) + '</strong>' +
-      (selectedShift.opened_at ? ' &nbsp;·&nbsp; Buka: ' + new Date(selectedShift.opened_at).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'}) : '');
-    if (addBtn) {
-      addBtn.disabled = !isActive;
-      addBtn.textContent = isActive ? '+ Catat Pengeluaran' : 'Shift sudah ditutup';
-    }
+  if (currentShift) {
+    if (shiftLabel) shiftLabel.textContent = '— Shift ' + currentShift.kasir_name + ' (Aktif)';
+    if (addBtn) { addBtn.disabled = false; addBtn.textContent = '+ Catat Pengeluaran'; }
   } else {
-    if (banner) banner.style.display = 'none';
-    if (shiftLabel) shiftLabel.textContent = '';
+    if (shiftLabel) shiftLabel.textContent = '— Tidak ada shift aktif';
+    if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Buka shift dulu'; }
   }
 
-  // Kas tunai masuk dari shift ini
-  let tunaiFisik = 0;
-  if (selectedShift) {
-    const shiftStart = new Date(selectedShift.opened_at);
-    const shiftEnd = selectedShift.closed_at ? new Date(selectedShift.closed_at) : new Date(9999,0,1);
-    const shiftTxns = transactions.filter(t => {
-      const tt = t.timestamp ? new Date(t.timestamp) : null;
-      return tt && tt >= shiftStart && tt <= shiftEnd;
-    });
-    tunaiFisik = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s + t.total, 0);
-  }
-
-  const modalAwal = selectedShift?.modal_awal || 0;
   const KAS_CATS = ['Bahan Baku', 'Operasional', 'Lainnya'];
   const NON_KAS_CATS = ['Gaji'];
   const totalExp = expenses.reduce((s, e) => s + e.amount, 0);
   const expKas = expenses.filter(e => KAS_CATS.includes(e.category)).reduce((s, e) => s + e.amount, 0);
   const expGaji = expenses.filter(e => NON_KAS_CATS.includes(e.category)).reduce((s, e) => s + e.amount, 0);
+
+  // Kas tunai dari semua shift yang overlap hari ini
+  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
+  const dayEnd = new Date(dateStr + 'T23:59:59' + localTZOffset());
+  const dayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= dayStart && tt <= dayEnd;
+  });
+  const tunaiFisik = dayTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s+t.total, 0);
+
+  // Modal awal dari semua shift yang buka hari ini
+  const dayShifts = allShifts.filter(s => localDateStr(new Date(s.opened_at)) === dateStr);
+  const modalAwal = dayShifts.reduce((s, sh) => s + (sh.modal_awal||0), 0);
   const saldoKas = modalAwal + tunaiFisik - expKas;
 
   document.getElementById('expense-summary').innerHTML = [
-    { label: 'Pengeluaran Kas', val: fmt(expKas), sub: 'bahan baku + operasional', color: 'var(--red)' },
-    { label: 'Gaji', val: fmt(expGaji), sub: 'tidak ngurangi kas fisik', color: expGaji > 0 ? 'var(--amber)' : '' },
-    { label: 'Kas Tunai Masuk', val: fmt(tunaiFisik), sub: 'modal awal ' + fmt(modalAwal) },
-    { label: 'Saldo Kas', val: fmt(saldoKas), sub: 'kas - pengeluaran operasional', color: saldoKas >= 0 ? 'var(--green)' : 'var(--red)' },
+    { label: 'Pengeluaran Kas', val: fmt(expKas), sub: expenses.length + ' item', color: 'var(--red)' },
+    { label: 'Gaji', val: fmt(expGaji), sub: 'non-kas', color: expGaji > 0 ? 'var(--amber)' : '' },
+    { label: 'Kas Tunai Masuk', val: fmt(tunaiFisik), sub: 'modal ' + fmt(modalAwal) },
+    { label: 'Saldo Kas', val: fmt(saldoKas), sub: 'kas - pengeluaran', color: saldoKas >= 0 ? 'var(--green)' : 'var(--red)' },
   ].map(s => '<div class="stat-card"><div class="s-label">' + s.label + '</div><div class="s-val" style="font-size:18px;' + (s.color ? 'color:'+s.color : '') + '">' + s.val + '</div><div class="s-sub">' + s.sub + '</div></div>').join('');
 
   const el = document.getElementById('expense-list');
   if (!expenses.length) {
-    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran di shift ini</div>';
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">Belum ada pengeluaran hari ini</div>';
     return;
   }
   el.innerHTML = expenses.map(e => {
