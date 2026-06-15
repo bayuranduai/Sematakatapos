@@ -1051,8 +1051,6 @@
     <div class="reports-header">
       <h2>Laporan Penjualan</h2>
       <select class="date-filter" id="report-period" onchange="onPeriodChange()">
-        <option value="today">Hari ini</option>
-        <option value="week">7 hari terakhir</option>
         <option value="month">Bulan ini</option>
         <option value="custom">Pilih Tanggal</option>
       </select>
@@ -2855,7 +2853,6 @@ async function renderStatCards(txns, dateStr) {
     { label:'Omset Bersih', val: hppAvailable ? fmt(omsetBersih) : '—', sub: hppAvailable ? 'Setelah HPP & Pajak' : 'Isi HPP di menu' },
     { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) : 'Isi HPP di menu' },
     { label:'Total Pengeluaran', val: fmt(totalExpenses), sub: 'operasional periode ini' },
-    { label:'Saldo Harian', val: fmt(saldoHarian), sub: 'modal + tunai - pengeluaran', color: saldoHarian >= 0 ? 'var(--green)' : 'var(--red)' },
     { label:'Rata-rata Order', val: fmt(avgOrder), sub: 'per transaksi' },
     { label:'Total Diskon', val: fmt(totalDiscount), sub: 'diberikan' },
     { label:'Item Terjual', val: totalItems, sub: 'total item' },
