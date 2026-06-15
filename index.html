@@ -4061,10 +4061,13 @@ async function openCloseShiftModal() {
   const totalDigital = totalSales - totalCash;
   const modalAwal = currentShift.modal_awal || 0;
 
-  // Load pengeluaran shift ini
+  // Load pengeluaran shift ini berdasarkan tanggal shift dibuka
   let expKas = 0, expGaji = 0;
   if (SUPABASE_CONFIGURED) {
-    const { data } = await sb.from('expenses').select('category,amount').eq('shift_id', currentShift.id);
+    const shiftDateStr = localDateStr(new Date(currentShift.opened_at));
+    const { data } = await sb.from('expenses').select('category,amount')
+      .gte('created_at', shiftDateStr + 'T00:00:00' + localTZOffset())
+      .lte('created_at', shiftDateStr + 'T23:59:59' + localTZOffset());
     if (data) {
       const KAS_CATS = ['Bahan Baku','Operasional','Lainnya'];
       expKas = data.filter(e => KAS_CATS.includes(e.category)).reduce((s,e) => s+e.amount, 0);
