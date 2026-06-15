@@ -1051,14 +1051,14 @@
     <div class="reports-header">
       <h2>Laporan Penjualan</h2>
       <select class="date-filter" id="report-period" onchange="onPeriodChange()">
-        <option value="month">Bulan ini</option>
+        <option value="month" selected>Bulan ini</option>
         <option value="custom">Pilih Tanggal</option>
       </select>
       <div id="custom-date-range" style="display:none;gap:6px;align-items:center">
-        <input type="date" class="date-filter" id="date-from">
+        <input type="date" class="date-filter" id="date-from" onchange="syncDateTo()">
         <span style="color:var(--text-dim);font-size:12px">s/d</span>
-        <input type="date" class="date-filter" id="date-to">
-        <button class="add-menu-btn" onclick="renderReports()" style="font-size:12px;padding:7px 14px">Go</button>
+        <input type="date" class="date-filter" id="date-to" onchange="this.blur()">
+        <button class="add-menu-btn" onclick="document.activeElement.blur(); setTimeout(renderReports, 50)" style="font-size:12px;padding:7px 14px">Go</button>
       </div>
       <div style="position:relative;display:inline-block" id="download-wrap">
         <button class="add-menu-btn" onclick="toggleDownloadMenu()" style="font-size:12px;padding:7px 16px">
@@ -2706,16 +2706,15 @@ async function onPeriodChange() {
   if (period !== 'custom') await renderReports();
 }
 
+function syncDateTo() {
+  // Kalau date-from diisi tapi date-to kosong, auto-set date-to = date-from
+  const from = document.getElementById('date-from').value;
+  const to = document.getElementById('date-to').value;
+  if (from && !to) document.getElementById('date-to').value = from;
+}
+
 function getFilteredTransactions() {
   const period = document.getElementById('report-period').value;
-  const todayStr = localDateStr();
-
-  if (period === 'today') return transactions.filter(t => t.date === todayStr);
-  if (period === 'week') {
-    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoStr = localDateStr(weekAgo);
-    return transactions.filter(t => t.date >= weekAgoStr);
-  }
   if (period === 'month') {
     const monthStr = localMonthStr();
     return transactions.filter(t => t.date && t.date.startsWith(monthStr));
@@ -2815,13 +2814,11 @@ async function renderStatCards(txns, dateStr) {
     // Tunai dari transaksi hari itu
     tunaiFisik = txns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s+t.total, 0);
   } else if (SUPABASE_CONFIGURED) {
-    // Periode penuh — pakai totalExpenses dari renderReports
+    // Periode penuh — load expenses
     const period = document.getElementById('report-period').value;
     const todayStr = localDateStr();
     let fromDate, toDate;
-    if (period === 'today') { fromDate = toDate = todayStr; }
-    else if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromDate = localDateStr(d); toDate = todayStr; }
-    else if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
+    if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
     else if (period === 'custom') { fromDate = document.getElementById('date-from').value; toDate = document.getElementById('date-to').value; }
     if (fromDate && toDate) {
       const { data: expData } = await sb.from('expenses')
@@ -2939,14 +2936,12 @@ async function renderReports() {
   const customRange = document.getElementById('custom-date-range');
   customRange.style.display = period === 'custom' ? 'flex' : 'none';
 
-  // Load transactions untuk periode — simpan di variabel lokal, JANGAN replace global
+  // Load transactions untuk periode dari DB
   let reportTxns = null;
   if (SUPABASE_CONFIGURED) {
     const todayStr = localDateStr();
     let fromDate, toDate;
-    if (period === 'today') { fromDate = toDate = todayStr; }
-    else if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromDate = localDateStr(d); toDate = todayStr; }
-    else if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
+    if (period === 'month') { fromDate = localMonthStr() + '-01'; toDate = todayStr; }
     else if (period === 'custom') {
       fromDate = document.getElementById('date-from').value;
       toDate = document.getElementById('date-to').value;
@@ -2964,10 +2959,8 @@ async function renderReports() {
   if (allShifts.length) {
     // Tentukan date range yang sedang dilihat
     const todayStr = localDateStr();
-    let fromStr = todayStr, toStr = todayStr;
-    if (period === 'week') { const d = new Date(); d.setDate(d.getDate()-7); fromStr = localDateStr(d); toStr = todayStr; }
-    else if (period === 'month') { const d = new Date(); fromStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; toStr = todayStr; }
-    else if (period === 'custom') { fromStr = document.getElementById('date-from').value || todayStr; toStr = document.getElementById('date-to').value || todayStr; }
+    let fromStr = localMonthStr() + '-01', toStr = todayStr;
+    if (period === 'custom') { fromStr = document.getElementById('date-from').value || todayStr; toStr = document.getElementById('date-to').value || todayStr; }
 
     // Filter shift yang overlap dengan periode
     const relevantShifts = allShifts.filter(s => {
@@ -3044,7 +3037,7 @@ function exportReport(type) {
   const filtered = getFilteredTransactions();
   const { totalRevenue, totalDiscount, totalTax, totalHPP, hppAvailable, omsetKotor, omsetBersih, grossMargin } = calcProfitData(filtered);
   const period = document.getElementById('report-period').value;
-  const periodLabel = period === 'today' ? 'Hari Ini' : period === 'week' ? '7 Hari Terakhir' : 'Bulan Ini';
+  const periodLabel = period === 'month' ? 'Bulan Ini' : 'Pilih Tanggal';
   const now = new Date().toLocaleString('id-ID');
   const avgOrder = filtered.length ? Math.round(totalRevenue / filtered.length) : 0;
 
