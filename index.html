@@ -2659,6 +2659,8 @@ async function finishOrder(method) {
 
   updateKitchenBadge();
   showReceipt(order);
+  // Update stok otomatis setelah transaksi
+  updateStockAfterOrder().catch(e => console.error('updateStock error:', e));
 }
 
 // ═══════════════════════════════════════════════
@@ -4415,17 +4417,10 @@ async function renderStock() {
 
   stockItems.forEach(item => {
     const log = stockLogs.find(l => l.item_id === item.id);
-    const terjual = calcTerjual(item.name, dayTxns);
     const stokMasuk = log ? log.stok_masuk : 0;
-
-    // Sisa kemarin
-    const sisaKemarin = log ? log.sisa - terjual + stokMasuk : 0;
-    const stokAwal = log ? (stokMasuk + (log.sisa - terjual + stokMasuk > 0 ? log.sisa - terjual + stokMasuk - stokMasuk : 0)) : stokMasuk;
-
-    // Hitung sisa = stok masuk + sisa kemarin - terjual
-    // Simplified: ambil dari log kalau ada, kalau tidak hitung dari transaksi
-    const sisaHitung = Math.max(0, stokMasuk - terjual);
-    const sisa = log ? Math.max(0, log.stok_masuk - terjual) : sisaHitung;
+    // Selalu hitung terjual dari transaksi live (bukan dari DB)
+    const terjual = calcTerjual(item.name, dayTxns);
+    const sisa = Math.max(0, stokMasuk - terjual);
 
     totalMasuk += stokMasuk;
     totalTerjual += terjual;
@@ -4516,10 +4511,10 @@ async function saveStockInput() {
     const input = document.getElementById('stock-input-' + item.id);
     if (!input) continue;
     const stokMasuk = parseInt(input.value) || 0;
+    // Selalu hitung dari transaksi live
     const terjual = calcTerjual(item.name, dayTxns);
     const sisa = Math.max(0, stokMasuk - terjual);
 
-    // Upsert log
     await sb.from('stock_logs').upsert({
       item_id: item.id,
       date: dateStr,
@@ -4577,7 +4572,30 @@ async function renderStockHistory() {
     '</tbody></table>';
 }
 
-// ── START ──
+async function updateStockAfterOrder() {
+  // Auto-update terjual dan sisa di stock_logs setelah transaksi
+  if (!SUPABASE_CONFIGURED || !stockItems.length) return;
+  const dateStr = localDateStr();
+  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
+  const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
+  const dayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= dayStart && tt <= dayEnd;
+  });
+
+  for (const item of stockItems) {
+    const terjual = calcTerjual(item.name, dayTxns);
+    // Get current stok_masuk
+    const { data: log } = await sb.from('stock_logs')
+      .select('stok_masuk').eq('item_id', item.id).eq('date', dateStr).single();
+    const stokMasuk = log ? log.stok_masuk : 0;
+    const sisa = Math.max(0, stokMasuk - terjual);
+    await sb.from('stock_logs').upsert({
+      item_id: item.id, date: dateStr,
+      stok_masuk: stokMasuk, terjual, sisa,
+    }, { onConflict: 'item_id,date' });
+  }
+}
 init().catch(console.error);
 
 // ── PWA SERVICE WORKER + AUTO UPDATE ──
