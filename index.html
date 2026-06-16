@@ -1874,6 +1874,7 @@ async function init() {
     renderKitchen();
     await loadStoreInfo();
     try { await loadStockItems(); } catch(e) { console.error('loadStock failed:', e); }
+  } else {
     setConnStatus('offline');
     showToast('Mode Demo — data tidak tersimpan permanen', 'info');
     renderCatPills();
@@ -2002,7 +2003,10 @@ function mapTransaction(r) {
 // ═══════════════════════════════════════════════
 function subscribeRealtime() {
   // Orders realtime — semua HP lihat update dapur
-  sb.channel('orders-channel')
+  // Realtime subscription — hanya sekali
+  if (!window._realtimeSubscribed) {
+    window._realtimeSubscribed = true;
+    sb.channel('orders-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async (payload) => {
       await loadOrdersFromDB();
       renderKitchen();
@@ -2023,7 +2027,8 @@ function subscribeRealtime() {
       if (document.getElementById('view-settings').classList.contains('active')) renderMenuMgmt();
     })
     .subscribe();
-}
+  } // end if _realtimeSubscribed
+} // end subscribeRealtime
 
 // ═══════════════════════════════════════════════
 //  SUPABASE — WRITE OPERATIONS
