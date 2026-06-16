@@ -751,6 +751,22 @@
   .eli-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
   .eli-del:hover { color: var(--red); }
 
+  /* ── PIN MODAL ── */
+  .pin-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--border); background: transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .pin-dot.filled { background: var(--amber); border-color: var(--amber); }
+  .pin-btn {
+    padding: 16px; font-size: 20px; font-weight: 600;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text);
+    cursor: pointer; transition: background .15s;
+  }
+  .pin-btn:hover { background: var(--surface3); }
+  .pin-btn:active { background: var(--amber-dim); }
+
   /* ── MOBILE RESPONSIVE ── */
   @media (max-width: 768px) {
     body { height: auto; min-height: 100vh; overflow: auto; }
@@ -960,7 +976,7 @@
     <button class="nav-tab" onclick="switchView('expenses')" id="tab-expenses">Pengeluaran</button>
     <button class="nav-tab" onclick="switchView('stock')" id="tab-stock">Stok Bahan</button>
     <button class="nav-tab" onclick="switchView('reports')" id="tab-reports">Laporan</button>
-    <button class="nav-tab" onclick="switchView('settings')" id="tab-settings">Pengaturan</button>
+    <button class="nav-tab" onclick="requestSettingsPin()" id="tab-settings">Pengaturan</button>
   </div>
   <div class="clock" id="clock">--:--:--</div>
   <div style="display:flex;align-items:center;gap:6px;margin-left:12px">
@@ -1252,6 +1268,14 @@
           <input class="s-input" type="text" id="store-footer" value="Terima kasih telah berkunjung! Selamat menikmati ">
         </div>
         <button class="s-save-btn" onclick="saveStoreInfo()">Simpan</button>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="s-card-title" style="margin-bottom:12px;font-size:13px">🔐 Ganti PIN Owner</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="s-input" type="password" id="new-owner-pin" placeholder="PIN baru (4 digit)" maxlength="4" style="flex:1">
+            <input class="s-input" type="password" id="confirm-owner-pin" placeholder="Konfirmasi PIN" maxlength="4" style="flex:1">
+            <button class="k-btn" onclick="saveOwnerPin()" style="margin:0;padding:10px 16px;white-space:nowrap">Simpan PIN</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1874,6 +1898,7 @@ async function init() {
     renderKitchen();
     await loadStoreInfo();
     try { await loadStockItems(); } catch(e) { console.error('loadStock failed:', e); }
+    try { await loadOwnerPin(); } catch(e) { console.error('loadOwnerPin failed:', e); }
   } else {
     setConnStatus('offline');
     showToast('Mode Demo — data tidak tersimpan permanen', 'info');
@@ -4601,6 +4626,94 @@ async function updateStockAfterOrder() {
     }, { onConflict: 'item_id,date' });
   }
 }
+// ══════════════════════════════════════════════
+//  PIN PROTECTION
+// ══════════════════════════════════════════════
+let pinBuffer = '';
+let ownerPin = '1234';
+
+async function saveOwnerPin() {
+  const newPin = document.getElementById('new-owner-pin').value.trim();
+  const confirmPin = document.getElementById('confirm-owner-pin').value.trim();
+  if (!newPin || newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+    showToast('PIN harus 4 digit angka', 'error'); return;
+  }
+  if (newPin !== confirmPin) {
+    showToast('Konfirmasi PIN tidak cocok', 'error'); return;
+  }
+  if (SUPABASE_CONFIGURED) {
+    const { error } = await sb.from('store_settings').update({ owner_pin: newPin }).eq('id', 1);
+    if (error) { showToast('Gagal simpan PIN', 'error'); return; }
+  }
+  ownerPin = newPin;
+  document.getElementById('new-owner-pin').value = '';
+  document.getElementById('confirm-owner-pin').value = '';
+  showToast('PIN Owner berhasil diperbarui 🔐', 'success');
+}
+
+async function loadOwnerPin() {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data } = await sb.from('store_settings').select('owner_pin').eq('id', 1).single();
+  if (data?.owner_pin) ownerPin = data.owner_pin;
+}
+
+function requestSettingsPin() {
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('pin-error').textContent = '';
+  document.getElementById('pin-modal').style.display = 'flex';
+}
+
+function closePinModal() {
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('pin-error').textContent = '';
+  document.getElementById('pin-modal').style.display = 'none';
+}
+
+function pinInput(digit) {
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += digit;
+  updatePinDots();
+  if (pinBuffer.length === 4) setTimeout(verifyPin, 150);
+}
+
+function pinBackspace() {
+  pinBuffer = pinBuffer.slice(0, -1);
+  updatePinDots();
+}
+
+function pinClear() {
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('pin-error').textContent = '';
+}
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById('pd' + i);
+    if (dot) dot.classList.toggle('filled', i < pinBuffer.length);
+  }
+}
+
+function verifyPin() {
+  if (pinBuffer === ownerPin) {
+    closePinModal();
+    switchView('settings');
+  } else {
+    document.getElementById('pin-error').textContent = '❌ PIN salah, coba lagi';
+    pinBuffer = '';
+    updatePinDots();
+    const box = document.getElementById('pin-modal').querySelector('div');
+    if (box) {
+      box.style.transition = 'transform .08s';
+      ['-8px','8px','-4px','0'].forEach((x, i) => {
+        setTimeout(() => { box.style.transform = 'translateX('+x+')'; }, i * 80);
+      });
+    }
+  }
+}
+
 init().catch(console.error);
 
 // ── PWA SERVICE WORKER + AUTO UPDATE ──
@@ -4622,5 +4735,37 @@ if ('serviceWorker' in navigator) {
   }).catch(e => console.log('SW register failed:', e));
 }
 </script>
+
+<!-- PIN MODAL -->
+<div id="pin-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;width:300px;text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🔐</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">Pengaturan</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px">Masukkan PIN Owner</div>
+    <div style="display:flex;gap:12px;justify-content:center;margin-bottom:8px" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div id="pin-error" style="color:var(--red);font-size:12px;min-height:18px;margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+      <button class="pin-btn" onclick="pinInput('1')">1</button>
+      <button class="pin-btn" onclick="pinInput('2')">2</button>
+      <button class="pin-btn" onclick="pinInput('3')">3</button>
+      <button class="pin-btn" onclick="pinInput('4')">4</button>
+      <button class="pin-btn" onclick="pinInput('5')">5</button>
+      <button class="pin-btn" onclick="pinInput('6')">6</button>
+      <button class="pin-btn" onclick="pinInput('7')">7</button>
+      <button class="pin-btn" onclick="pinInput('8')">8</button>
+      <button class="pin-btn" onclick="pinInput('9')">9</button>
+      <button class="pin-btn" onclick="pinClear()" style="color:var(--text-dim);font-size:12px">Hapus</button>
+      <button class="pin-btn" onclick="pinInput('0')">0</button>
+      <button class="pin-btn" onclick="pinBackspace()" style="color:var(--text-dim)">⌫</button>
+    </div>
+    <button onclick="closePinModal()" style="width:100%;padding:10px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;font-size:13px">Batal</button>
+  </div>
+</div>
+
 </body>
 </html>
