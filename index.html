@@ -958,6 +958,7 @@
     <button class="nav-tab" onclick="switchView('tables')" id="tab-tables">Meja</button>
     <button class="nav-tab" onclick="switchView('shift')" id="tab-shift">Shift</button>
     <button class="nav-tab" onclick="switchView('expenses')" id="tab-expenses">Pengeluaran</button>
+    <button class="nav-tab" onclick="switchView('stock')" id="tab-stock">Stok Bahan</button>
     <button class="nav-tab" onclick="switchView('reports')" id="tab-reports">Laporan</button>
     <button class="nav-tab" onclick="switchView('settings')" id="tab-settings">Pengaturan</button>
   </div>
@@ -1118,6 +1119,27 @@
         </thead>
         <tbody id="txn-tbody"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- STOK BAHAN VIEW -->
+<div class="view" id="view-stock">
+  <div class="shift-content">
+    <div class="reports-header" style="margin-bottom:0">
+      <h2>Stok Bahan</h2>
+      <input type="date" class="date-filter" id="stock-date-filter" onchange="renderStock()">
+    </div>
+    <div class="shift-stats" id="stock-summary"></div>
+    <div id="stock-items-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px"></div>
+    <div class="expense-form-card">
+      <div class="s-card-title" style="margin-bottom:12px">Input Stok Hari Ini</div>
+      <div id="stock-input-grid" style="display:flex;flex-direction:column;gap:10px"></div>
+      <button class="s-save-btn" style="margin-top:14px;width:100%;padding:10px" onclick="saveStockInput()">💾 Simpan Stok</button>
+    </div>
+    <div class="report-card">
+      <div class="section-title">Histori Stok (7 hari terakhir)</div>
+      <div id="stock-history"></div>
     </div>
   </div>
 </div>
@@ -1851,7 +1873,7 @@ async function init() {
     renderReports();
     renderKitchen();
     await loadStoreInfo();
-  } else {
+    try { await loadStockItems(); } catch(e) { console.error('loadStock failed:', e); }
     setConnStatus('offline');
     showToast('Mode Demo — data tidak tersimpan permanen', 'info');
     renderCatPills();
@@ -2149,6 +2171,10 @@ async function switchView(name) {
   if (name === 'reports') await renderReports();
   if (name === 'kitchen') renderKitchen();
   if (name === 'tables') renderTables();
+  if (name === 'stock') {
+    document.getElementById('stock-date-filter').value = localDateStr();
+    renderStock();
+  }
   if (name === 'settings') { showSettingsPanel('menu'); renderMenuMgmt(); }
   if (name === 'shift') renderShiftView();
   if (name === 'expenses') {
@@ -4296,6 +4322,251 @@ async function renderExpenses() {
       '<span style="font-size:14px;font-weight:800;color:var(--red)">Total: -' + fmt(totalExp) + '</span>' +
     '</div>' +
   '</div>';
+}
+
+// ══════════════════════════════════════════════
+//  STOK BAHAN
+// ══════════════════════════════════════════════
+let stockItems = [];  // from stock_items table
+let stockLogs = [];   // from stock_logs table for selected date
+
+// Mapping: keyword di nama menu → nama item stok
+const STOCK_MENU_MAP = {
+  'Ayam':    'Ayam',
+  'Lele':    'Lele',
+  'Pindang': 'Pindang',
+};
+// Konversi porsi → pc stok
+const STOCK_PORSI_MAP = {
+  'Ayam':    1,
+  'Lele':    2,  // 1 porsi lele = 2 pc
+  'Pindang': 1,
+};
+
+async function loadStockItems() {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data } = await sb.from('stock_items').select('*').order('id');
+  if (data) stockItems = data;
+}
+
+async function loadStockLogs(dateStr) {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data } = await sb.from('stock_logs').select('*').eq('date', dateStr);
+  if (data) stockLogs = data;
+}
+
+// Hitung berapa pc terjual dari transaksi hari itu
+function calcTerjual(itemName, txns) {
+  let total = 0;
+  const porsi = STOCK_PORSI_MAP[itemName] || 1;
+  txns.forEach(t => {
+    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
+      t.itemsDetail.forEach(i => {
+        if (i.name && i.name.toLowerCase().includes(itemName.toLowerCase())) {
+          total += i.qty * porsi;
+        }
+      });
+    } else if (t.items) {
+      const parts = t.items.split(', ');
+      parts.forEach(p => {
+        const m = p.match(/^(.+) x(\d+)$/);
+        if (m && m[1].toLowerCase().includes(itemName.toLowerCase())) {
+          total += parseInt(m[2]) * porsi;
+        }
+      });
+    }
+  });
+  return total;
+}
+
+async function renderStock() {
+  const dateStr = document.getElementById('stock-date-filter').value || localDateStr();
+  document.getElementById('stock-date-filter').value = dateStr;
+
+  await loadStockItems();
+  await loadStockLogs(dateStr);
+
+  // Transaksi hari itu
+  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
+  const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
+  const dayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= dayStart && tt <= dayEnd;
+  });
+
+  // Summary cards
+  let totalMasuk = 0, totalTerjual = 0, totalSisa = 0;
+
+  // Stock items cards
+  const grid = document.getElementById('stock-items-grid');
+  const inputGrid = document.getElementById('stock-input-grid');
+  grid.innerHTML = '';
+  inputGrid.innerHTML = '';
+
+  const alerts = [];
+
+  stockItems.forEach(item => {
+    const log = stockLogs.find(l => l.item_id === item.id);
+    const terjual = calcTerjual(item.name, dayTxns);
+    const stokMasuk = log ? log.stok_masuk : 0;
+
+    // Sisa kemarin
+    const sisaKemarin = log ? log.sisa - terjual + stokMasuk : 0;
+    const stokAwal = log ? (stokMasuk + (log.sisa - terjual + stokMasuk > 0 ? log.sisa - terjual + stokMasuk - stokMasuk : 0)) : stokMasuk;
+
+    // Hitung sisa = stok masuk + sisa kemarin - terjual
+    // Simplified: ambil dari log kalau ada, kalau tidak hitung dari transaksi
+    const sisaHitung = Math.max(0, stokMasuk - terjual);
+    const sisa = log ? Math.max(0, log.stok_masuk - terjual) : sisaHitung;
+
+    totalMasuk += stokMasuk;
+    totalTerjual += terjual;
+    totalSisa += sisa;
+
+    // Alert check
+    if (stokMasuk > 0 && sisa <= item.alert_threshold) alerts.push(item.name + ': sisa ' + sisa + ' pc');
+
+    // Status color
+    const pct = stokMasuk > 0 ? sisa / stokMasuk : 0;
+    const statusColor = sisa <= 0 ? 'var(--red)' : sisa <= item.alert_threshold ? '#D4A017' : 'var(--green)';
+    const statusEmoji = sisa <= 0 ? '🔴' : sisa <= item.alert_threshold ? '🟡' : '🟢';
+
+    // Estimasi habis
+    const txnsPerHour = dayTxns.length;
+    let estimasi = '';
+    if (terjual > 0 && sisa > 0) {
+      const lajuPerJam = terjual / (new Date().getHours() || 1);
+      if (lajuPerJam > 0) {
+        const jamLagi = sisa / lajuPerJam;
+        const jamHabis = new Date();
+        jamHabis.setHours(jamHabis.getHours() + jamLagi);
+        estimasi = 'Est. habis ~' + jamHabis.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+      }
+    }
+
+    // Progress bar
+    const progPct = stokMasuk > 0 ? Math.max(0, Math.min(100, (sisa/stokMasuk)*100)) : 0;
+
+    grid.innerHTML += `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:700;font-size:15px">${statusEmoji} ${item.name}</div>
+          <div style="font-size:11px;color:var(--text-dim)">${item.unit}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;text-align:center">
+          <div><div style="font-size:11px;color:var(--text-dim)">Stok</div><div style="font-size:18px;font-weight:700">${stokMasuk}</div></div>
+          <div><div style="font-size:11px;color:var(--text-dim)">Terjual</div><div style="font-size:18px;font-weight:700;color:var(--amber)">${terjual}</div></div>
+          <div><div style="font-size:11px;color:var(--text-dim)">Sisa</div><div style="font-size:18px;font-weight:700;color:${statusColor}">${sisa}</div></div>
+        </div>
+        <div style="background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${progPct}%;background:${statusColor};transition:width .4s"></div>
+        </div>
+        ${estimasi ? `<div style="font-size:11px;color:var(--text-dim)">${estimasi}</div>` : ''}
+      </div>`;
+
+    // Input form
+    inputGrid.innerHTML += `
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:var(--radius-sm);padding:10px 14px">
+        <div style="font-weight:600;min-width:70px">${item.name}</div>
+        <div style="font-size:12px;color:var(--text-dim);flex:1">Stok masuk hari ini</div>
+        <input type="number" id="stock-input-${item.id}" value="${stokMasuk || ''}" placeholder="0"
+          style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);text-align:center;font-size:14px">
+        <span style="font-size:12px;color:var(--text-dim)">${item.unit}</span>
+      </div>`;
+  });
+
+  // Summary
+  document.getElementById('stock-summary').innerHTML = [
+    { label:'Total Stok Masuk', val: totalMasuk + ' pc', sub: 'hari ini' },
+    { label:'Total Terjual', val: totalTerjual + ' pc', sub: 'dari transaksi', color:'var(--amber)' },
+    { label:'Total Sisa', val: totalSisa + ' pc', sub: 'estimasi tersisa', color: totalSisa <= 0 ? 'var(--red)' : 'var(--green)' },
+  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:18px;${s.color?'color:'+s.color:''}">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
+
+  // Alert popup
+  if (alerts.length) {
+    setTimeout(() => {
+      showToast('⚠️ Stok hampir habis: ' + alerts.join(', '), 'error');
+    }, 500);
+  }
+
+  // History
+  await renderStockHistory();
+}
+
+async function saveStockInput() {
+  const dateStr = document.getElementById('stock-date-filter').value || localDateStr();
+  if (!SUPABASE_CONFIGURED) { showToast('Tidak terhubung ke DB', 'error'); return; }
+
+  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
+  const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
+  const dayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= dayStart && tt <= dayEnd;
+  });
+
+  for (const item of stockItems) {
+    const input = document.getElementById('stock-input-' + item.id);
+    if (!input) continue;
+    const stokMasuk = parseInt(input.value) || 0;
+    const terjual = calcTerjual(item.name, dayTxns);
+    const sisa = Math.max(0, stokMasuk - terjual);
+
+    // Upsert log
+    await sb.from('stock_logs').upsert({
+      item_id: item.id,
+      date: dateStr,
+      stok_masuk: stokMasuk,
+      terjual,
+      sisa,
+    }, { onConflict: 'item_id,date' });
+  }
+
+  showToast('Stok disimpan ✅', 'success');
+  renderStock();
+}
+
+async function renderStockHistory() {
+  if (!SUPABASE_CONFIGURED) return;
+
+  const { data } = await sb.from('stock_logs')
+    .select('*, stock_items(name)')
+    .order('date', { ascending: false })
+    .limit(21); // 7 hari × 3 item
+
+  if (!data || !data.length) {
+    document.getElementById('stock-history').innerHTML =
+      '<div style="text-align:center;padding:20px;color:var(--text-dim)">Belum ada histori</div>';
+    return;
+  }
+
+  // Group by date
+  const byDate = {};
+  data.forEach(log => {
+    if (!byDate[log.date]) byDate[log.date] = [];
+    byDate[log.date].push(log);
+  });
+
+  document.getElementById('stock-history').innerHTML =
+    '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+    '<thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)">' +
+    '<th style="padding:8px 4px;text-align:left">Tanggal</th>' +
+    '<th style="padding:8px 4px;text-align:left">Bahan</th>' +
+    '<th style="padding:8px 4px;text-align:center">Masuk</th>' +
+    '<th style="padding:8px 4px;text-align:center">Terjual</th>' +
+    '<th style="padding:8px 4px;text-align:center">Sisa</th>' +
+    '</tr></thead><tbody>' +
+    Object.entries(byDate).map(([date, logs]) =>
+      logs.map((log, i) =>
+        `<tr style="border-bottom:1px solid var(--surface2)">
+          ${i === 0 ? `<td style="padding:8px 4px;color:var(--text-dim)" rowspan="${logs.length}">${new Date(date).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</td>` : ''}
+          <td style="padding:8px 4px;font-weight:600">${log.stock_items?.name || '-'}</td>
+          <td style="padding:8px 4px;text-align:center">${log.stok_masuk}</td>
+          <td style="padding:8px 4px;text-align:center;color:var(--amber)">${log.terjual}</td>
+          <td style="padding:8px 4px;text-align:center;font-weight:700;color:${log.sisa <= 3 ? 'var(--red)' : log.sisa <= 8 ? '#D4A017' : 'var(--green)'}">${log.sisa}</td>
+        </tr>`
+      ).join('')
+    ).join('') +
+    '</tbody></table>';
 }
 
 // ── START ──
