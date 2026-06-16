@@ -1124,7 +1124,7 @@
 </div>
 
 <!-- STOK BAHAN VIEW -->
-<div class="view" id="view-stock">
+<div class="view" id="view-stock" style="overflow-y:auto">
   <div class="shift-content">
     <div class="reports-header" style="margin-bottom:0">
       <h2>Stok Bahan</h2>
@@ -4334,12 +4334,12 @@ let stockLogs = [];   // from stock_logs table for selected date
 const STOCK_MENU_MAP = {
   'Ayam':    'Ayam',
   'Lele':    'Lele',
+  'Yeye':    'Lele',   // alias — menu Yeye = Lele
   'Pindang': 'Pindang',
 };
-// Konversi porsi → pc stok
 const STOCK_PORSI_MAP = {
   'Ayam':    1,
-  'Lele':    2,  // 1 porsi lele = 2 pc
+  'Lele':    2,  // 1 porsi = 2 pc
   'Pindang': 1,
 };
 
@@ -4359,19 +4359,27 @@ async function loadStockLogs(dateStr) {
 function calcTerjual(itemName, txns) {
   let total = 0;
   const porsi = STOCK_PORSI_MAP[itemName] || 1;
+  // Kumpulkan semua keyword yang map ke item ini
+  const keywords = Object.entries(STOCK_MENU_MAP)
+    .filter(([k, v]) => v === itemName)
+    .map(([k]) => k.toLowerCase());
+
   txns.forEach(t => {
     if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
       t.itemsDetail.forEach(i => {
-        if (i.name && i.name.toLowerCase().includes(itemName.toLowerCase())) {
+        const nameLower = (i.name || '').toLowerCase();
+        if (keywords.some(kw => nameLower.includes(kw))) {
           total += i.qty * porsi;
         }
       });
     } else if (t.items) {
-      const parts = t.items.split(', ');
-      parts.forEach(p => {
+      t.items.split(', ').forEach(p => {
         const m = p.match(/^(.+) x(\d+)$/);
-        if (m && m[1].toLowerCase().includes(itemName.toLowerCase())) {
-          total += parseInt(m[2]) * porsi;
+        if (m) {
+          const nameLower = m[1].toLowerCase();
+          if (keywords.some(kw => nameLower.includes(kw))) {
+            total += parseInt(m[2]) * porsi;
+          }
         }
       });
     }
