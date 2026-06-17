@@ -1172,6 +1172,7 @@
     <button class="s-nav-btn" onclick="showSettingsPanel('payment-cfg')" id="snav-payment-cfg"><span class="s-icon"></span>Pembayaran</button>
     <h3>Sistem</h3>
     <button class="s-nav-btn" onclick="showSettingsPanel('receipt-cfg')" id="snav-receipt-cfg"><span class="s-icon"></span>Struk</button>
+    <button class="s-nav-btn" onclick="showSettingsPanel('revenue')" id="snav-revenue"><span class="s-icon"></span>Revenue</button>
   </div>
   <div class="settings-content">
 
@@ -1398,10 +1399,42 @@
       </div>
     </div>
 
+    <!-- REVENUE PANEL -->
+    <div class="settings-panel" id="sp-revenue">
+      <div class="s-card">
+        <div class="s-card-title">📊 Revenue & Pembagian Hasil</div>
+
+        <!-- Period selector -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+          <select class="s-input" id="rev-month" style="width:140px" onchange="renderRevenue()">
+            <option value="1">Januari</option><option value="2">Februari</option>
+            <option value="3">Maret</option><option value="4">April</option>
+            <option value="5">Mei</option><option value="6">Juni</option>
+            <option value="7">Juli</option><option value="8">Agustus</option>
+            <option value="9">September</option><option value="10">Oktober</option>
+            <option value="11">November</option><option value="12">Desember</option>
+          </select>
+          <select class="s-input" id="rev-year" style="width:100px" onchange="renderRevenue()"></select>
+        </div>
+
+        <!-- Summary cards -->
+        <div id="rev-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
+
+        <!-- Profit sharing table -->
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--amber)">💰 Pembagian Hasil Usaha</div>
+        <div id="rev-shares" style="margin-bottom:16px"></div>
+
+        <!-- Edit shares -->
+        <div style="border-top:1px solid var(--border);padding-top:14px">
+          <div style="font-weight:600;font-size:12px;color:var(--text-dim);margin-bottom:10px">Kelola Pembagian</div>
+          <div id="rev-share-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+          <button class="k-btn" onclick="addShareRow()" style="margin:0;padding:8px 14px;font-size:12px">+ Tambah</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
-
-<!--  SHIFT VIEW  -->
 <div class="view" id="view-shift">
   <div class="shift-content">
     <div class="reports-header" style="margin-bottom:0">
@@ -3498,6 +3531,10 @@ function showSettingsPanel(name) {
   if (name === 'menu') renderMenuMgmt();
   if (name === 'categories') renderCatChips();
   if (name === 'discounts') renderDiscounts();
+  if (name === 'revenue') {
+    initRevenuePicker();
+    loadProfitShares().then(() => renderRevenue());
+  }
 }
 
 // ── Menu Management ──
@@ -4780,6 +4817,140 @@ function verifyPin() {
       });
     }
   }
+}
+
+// ══════════════════════════════════════════════
+//  REVENUE & PROFIT SHARING
+// ══════════════════════════════════════════════
+let profitShares = [];
+
+async function loadProfitShares() {
+  if (!SUPABASE_CONFIGURED) return;
+  const { data } = await sb.from('profit_shares').select('*').order('sort_order');
+  if (data) profitShares = data;
+}
+
+function initRevenuePicker() {
+  const now = new Date();
+  const yearSel = document.getElementById('rev-year');
+  if (yearSel && !yearSel.options.length) {
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 3; y--) {
+      const opt = document.createElement('option');
+      opt.value = y; opt.textContent = y;
+      if (y === now.getFullYear()) opt.selected = true;
+      yearSel.appendChild(opt);
+    }
+  }
+  const monthSel = document.getElementById('rev-month');
+  if (monthSel) monthSel.value = now.getMonth() + 1;
+}
+
+async function renderRevenue() {
+  const month = parseInt(document.getElementById('rev-month').value);
+  const year  = parseInt(document.getElementById('rev-year').value);
+  if (!month || !year) return;
+
+  const pad = n => String(n).padStart(2,'0');
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const fromDate = `${year}-${pad(month)}-01`;
+  const toDate   = `${year}-${pad(month)}-${daysInMonth}`;
+
+  let txns = [];
+  if (SUPABASE_CONFIGURED) {
+    const { data } = await sb.from('transactions').select('*')
+      .gte('created_at', fromDate + 'T00:00:00' + localTZOffset())
+      .lte('created_at', toDate   + 'T23:59:59' + localTZOffset());
+    if (data) txns = data.map(mapTransaction);
+  }
+
+  let totalExp = 0;
+  if (SUPABASE_CONFIGURED) {
+    const { data: expData } = await sb.from('expenses').select('amount')
+      .gte('created_at', fromDate + 'T00:00:00' + localTZOffset())
+      .lte('created_at', toDate   + 'T23:59:59' + localTZOffset());
+    if (expData) totalExp = expData.reduce((s,e) => s+e.amount, 0);
+  }
+
+  const omsetKotor = txns.reduce((s,t) => s + t.total, 0);
+  let totalHPP = 0;
+  txns.forEach(t => {
+    if (t.itemsDetail && Array.isArray(t.itemsDetail)) {
+      t.itemsDetail.forEach(i => {
+        const menu = MENU.find(m => m.name === i.name);
+        if (menu && menu.hpp) totalHPP += menu.hpp * i.qty;
+      });
+    }
+  });
+  const labaBersih = omsetKotor - totalHPP - totalExp;
+
+  const months = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  document.getElementById('rev-summary').innerHTML = [
+    { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length+' transaksi' },
+    { label:'Total HPP', val: fmt(totalHPP), sub: 'harga pokok', color:'var(--red)' },
+    { label:'Pengeluaran', val: fmt(totalExp), sub: 'operasional', color:'var(--red)' },
+    { label:'Laba Bersih', val: fmt(labaBersih), sub: months[month]+' '+year, color: labaBersih >= 0 ? 'var(--green)' : 'var(--red)' },
+  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:16px;${s.color?'color:'+s.color:''}">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
+
+  const totalPct = profitShares.reduce((s,p) => s + parseFloat(p.percentage), 0);
+  document.getElementById('rev-shares').innerHTML = labaBersih <= 0
+    ? `<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Laba bersih Rp 0 atau negatif</div>`
+    : `<table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)">
+          <th style="padding:8px 4px;text-align:left">Nama</th>
+          <th style="padding:8px 4px;text-align:center">%</th>
+          <th style="padding:8px 4px;text-align:right">Bagian</th>
+        </tr></thead><tbody>
+        ${profitShares.map(p => {
+          const bagian = Math.round(labaBersih * parseFloat(p.percentage) / 100);
+          return `<tr style="border-bottom:1px solid var(--surface2)">
+            <td style="padding:10px 4px;font-weight:600">${p.name}</td>
+            <td style="padding:10px 4px;text-align:center;color:var(--amber)">${p.percentage}%</td>
+            <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';font-weight:700;color:var(--green)">${fmt(bagian)}</td>
+          </tr>`;
+        }).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:800">
+          <td style="padding:10px 4px">Total</td>
+          <td style="padding:10px 4px;text-align:center">${totalPct}%</td>
+          <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';color:var(--green)">${fmt(labaBersih)}</td>
+        </tr></tbody></table>`;
+
+  renderShareEditList();
+}
+
+function renderShareEditList() {
+  document.getElementById('rev-share-list').innerHTML = profitShares.map(p => `
+    <div style="display:flex;gap:8px;align-items:center">
+      <input class="s-input" value="${p.name}" id="sname-${p.id}" style="flex:2;padding:7px 10px">
+      <input class="s-input" type="number" value="${p.percentage}" id="spct-${p.id}" style="width:70px;padding:7px 8px" step="0.5" min="0" max="100">
+      <span style="font-size:12px;color:var(--text-dim)">%</span>
+      <button class="k-btn" onclick="saveShare(${p.id})" style="margin:0;padding:7px 10px;font-size:12px">💾</button>
+      <button class="mmi-btn danger" onclick="deleteShare(${p.id})" style="padding:7px 10px">×</button>
+    </div>`).join('');
+}
+
+async function saveShare(id) {
+  const name = document.getElementById('sname-'+id).value.trim();
+  const pct  = parseFloat(document.getElementById('spct-'+id).value);
+  if (!name || isNaN(pct)) { showToast('Isi nama dan persentase', 'error'); return; }
+  await sb.from('profit_shares').update({ name, percentage: pct }).eq('id', id);
+  const idx = profitShares.findIndex(p => p.id === id);
+  if (idx >= 0) { profitShares[idx].name = name; profitShares[idx].percentage = pct; }
+  showToast('Disimpan ✅', 'success');
+  renderRevenue();
+}
+
+async function deleteShare(id) {
+  if (!confirm('Hapus?')) return;
+  await sb.from('profit_shares').delete().eq('id', id);
+  profitShares = profitShares.filter(p => p.id !== id);
+  renderRevenue();
+}
+
+async function addShareRow() {
+  const { data } = await sb.from('profit_shares')
+    .insert({ name: 'Nama Baru', percentage: 0, sort_order: profitShares.length + 1 })
+    .select().single();
+  if (data) { profitShares.push(data); renderRevenue(); }
 }
 
 init().catch(console.error);
