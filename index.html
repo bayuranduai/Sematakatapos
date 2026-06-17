@@ -751,6 +751,11 @@
   .eli-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 0 4px; }
   .eli-del:hover { color: var(--red); }
 
+  /* ── REVENUE TABS ── */
+  .rev-tab { padding: 7px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; }
+  .rev-tab.active { background: var(--amber); color: #1A0F00; border-color: var(--amber); font-weight: 700; }
+  .rev-tab:hover:not(.active) { border-color: var(--amber); color: var(--text); }
+
   /* ── PIN MODAL ── */
   .pin-dot {
     width: 16px; height: 16px; border-radius: 50%;
@@ -1172,7 +1177,7 @@
     <button class="s-nav-btn" onclick="showSettingsPanel('payment-cfg')" id="snav-payment-cfg"><span class="s-icon"></span>Pembayaran</button>
     <h3>Sistem</h3>
     <button class="s-nav-btn" onclick="showSettingsPanel('receipt-cfg')" id="snav-receipt-cfg"><span class="s-icon"></span>Struk</button>
-    <button class="s-nav-btn" onclick="showSettingsPanel('revenue')" id="snav-revenue"><span class="s-icon"></span>Revenue</button>
+    <button class="s-nav-btn" onclick="showSettingsPanel('revenue')" id="snav-revenue"><span class="s-icon"></span>Hasil Usaha</button>
   </div>
   <div class="settings-content">
 
@@ -1399,36 +1404,41 @@
       </div>
     </div>
 
-    <!-- REVENUE PANEL -->
+    <!-- HASIL USAHA PANEL -->
     <div class="settings-panel" id="sp-revenue">
       <div class="s-card">
-        <div class="s-card-title">📊 Revenue & Pembagian Hasil</div>
+        <div class="s-card-title">💰 Hasil Usaha</div>
 
-        <!-- Period selector -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-          <select class="s-input" id="rev-month" style="width:140px" onchange="renderRevenue()">
-            <option value="1">Januari</option><option value="2">Februari</option>
-            <option value="3">Maret</option><option value="4">April</option>
-            <option value="5">Mei</option><option value="6">Juni</option>
-            <option value="7">Juli</option><option value="8">Agustus</option>
-            <option value="9">September</option><option value="10">Oktober</option>
-            <option value="11">November</option><option value="12">Desember</option>
-          </select>
-          <select class="s-input" id="rev-year" style="width:100px" onchange="renderRevenue()"></select>
+        <!-- Sub tabs -->
+        <div style="display:flex;gap:6px;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px">
+          <button class="rev-tab active" id="revtab-bagi" onclick="switchRevTab('bagi')">Bagi Hasil</button>
+          <button class="rev-tab" id="revtab-kelola" onclick="switchRevTab('kelola')">Kelola Pembagian</button>
         </div>
 
-        <!-- Summary cards -->
-        <div id="rev-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
+        <!-- Bagi Hasil sub-panel -->
+        <div id="rev-panel-bagi">
+          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+            <select class="s-input" id="rev-month" style="width:140px" onchange="renderRevenue()">
+              <option value="1">Januari</option><option value="2">Februari</option>
+              <option value="3">Maret</option><option value="4">April</option>
+              <option value="5">Mei</option><option value="6">Juni</option>
+              <option value="7">Juli</option><option value="8">Agustus</option>
+              <option value="9">September</option><option value="10">Oktober</option>
+              <option value="11">November</option><option value="12">Desember</option>
+            </select>
+            <select class="s-input" id="rev-year" style="width:100px" onchange="renderRevenue()"></select>
+          </div>
+          <div id="rev-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
+          <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--amber)">Pembagian Hasil</div>
+          <div id="rev-shares"></div>
+        </div>
 
-        <!-- Profit sharing table -->
-        <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--amber)">💰 Pembagian Hasil Usaha</div>
-        <div id="rev-shares" style="margin-bottom:16px"></div>
-
-        <!-- Edit shares -->
-        <div style="border-top:1px solid var(--border);padding-top:14px">
-          <div style="font-weight:600;font-size:12px;color:var(--text-dim);margin-bottom:10px">Kelola Pembagian</div>
-          <div id="rev-share-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
-          <button class="k-btn" onclick="addShareRow()" style="margin:0;padding:8px 14px;font-size:12px">+ Tambah</button>
+        <!-- Kelola Pembagian sub-panel -->
+        <div id="rev-panel-kelola" style="display:none">
+          <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">Edit nama dan persentase. Total harus 100%.</div>
+          <div id="rev-share-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+          <div id="rev-total-pct" style="font-size:12px;margin-bottom:10px"></div>
+          <button class="k-btn" onclick="addShareRow()" style="margin:0;padding:8px 14px;font-size:12px">+ Tambah Orang</button>
         </div>
       </div>
     </div>
@@ -4917,15 +4927,37 @@ async function renderRevenue() {
   renderShareEditList();
 }
 
+function switchRevTab(tab) {
+  document.querySelectorAll('.rev-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('revtab-' + tab).classList.add('active');
+  document.getElementById('rev-panel-bagi').style.display = tab === 'bagi' ? 'block' : 'none';
+  document.getElementById('rev-panel-kelola').style.display = tab === 'kelola' ? 'block' : 'none';
+  if (tab === 'kelola') renderShareEditList();
+}
+
 function renderShareEditList() {
   document.getElementById('rev-share-list').innerHTML = profitShares.map(p => `
     <div style="display:flex;gap:8px;align-items:center">
       <input class="s-input" value="${p.name}" id="sname-${p.id}" style="flex:2;padding:7px 10px">
-      <input class="s-input" type="number" value="${p.percentage}" id="spct-${p.id}" style="width:70px;padding:7px 8px" step="0.5" min="0" max="100">
+      <input class="s-input" type="number" value="${p.percentage}" id="spct-${p.id}" style="width:70px;padding:7px 8px" step="0.5" min="0" max="100" oninput="updateTotalPct()">
       <span style="font-size:12px;color:var(--text-dim)">%</span>
       <button class="k-btn" onclick="saveShare(${p.id})" style="margin:0;padding:7px 10px;font-size:12px">💾</button>
       <button class="mmi-btn danger" onclick="deleteShare(${p.id})" style="padding:7px 10px">×</button>
     </div>`).join('');
+  updateTotalPct();
+}
+
+function updateTotalPct() {
+  const total = profitShares.reduce((s,p) => {
+    const input = document.getElementById('spct-'+p.id);
+    return s + (input ? parseFloat(input.value)||0 : parseFloat(p.percentage)||0);
+  }, 0);
+  const el = document.getElementById('rev-total-pct');
+  if (el) {
+    el.textContent = `Total: ${total}%`;
+    el.style.color = Math.abs(total - 100) < 0.01 ? 'var(--green)' : 'var(--red)';
+    el.style.fontWeight = '700';
+  }
 }
 
 async function saveShare(id) {
