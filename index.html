@@ -4364,15 +4364,25 @@ let stockLogs = [];   // from stock_logs table for selected date
 
 // Mapping: keyword di nama menu → nama item stok
 const STOCK_MENU_MAP = {
-  'Ayam':    'Ayam',
-  'Lele':    'Lele',
-  'Yeye':    'Lele',   // alias — menu Yeye = Lele
-  'Pindang': 'Pindang',
+  'Ayam':     'Ayam',
+  'Lele':     'Lele',
+  'Yeye':     'Lele',
+  'Pindang':  'Pindang',
+  'Bintang':  'Bintang',
+  'Draft':    'Draft',
+  'Singaraja':'Singaraja',
+  'Aqua':     'Aqua',
+  'Mineral':  'Mineral',
 };
 const STOCK_PORSI_MAP = {
-  'Ayam':    1,
-  'Lele':    2,  // 1 porsi = 2 pc
-  'Pindang': 1,
+  'Ayam':     1,
+  'Lele':     2,
+  'Pindang':  1,
+  'Bintang':  1,
+  'Draft':    1,
+  'Singaraja':1,
+  'Aqua':     1,
+  'Mineral':  1,
 };
 
 async function loadStockItems() {
