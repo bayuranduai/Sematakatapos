@@ -889,14 +889,12 @@
   .add-menu-btn:hover { background: var(--amber-lt); }
 
   .menu-mgmt-list { display: flex; flex-direction: column; gap: 6px; }
-  .menu-mgmt-item {
-    display: flex; align-items: center; gap: 10px;
-    background: var(--surface2); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 10px 12px;
-    transition: border-color .13s;
-    position: relative;
-  }
+  .menu-mgmt-item { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; transition: border-color .2s, opacity .2s; cursor: default; }
   .menu-mgmt-item:hover { border-color: var(--amber); }
+  .menu-mgmt-item.dragging { opacity: 0.4; border-color: var(--amber); }
+  .menu-mgmt-item.drag-over { border-color: var(--amber); background: var(--surface2); }
+  .mmi-drag { color: var(--text-dim); cursor: grab; font-size: 18px; padding: 0 2px; user-select: none; }
+  .mmi-drag:active { cursor: grabbing; }
   .mmi-emoji { font-size: 22px; width: 32px; text-align: center; cursor: pointer; }
   .mmi-info { flex: 1; }
   .mmi-name { font-size: 13px; font-weight: 700; }
@@ -1925,18 +1923,17 @@ function setConnStatus(state) {
 //  SUPABASE — LOAD DATA
 // ═══════════════════════════════════════════════
 async function loadMenuFromDB() {
-  const { data, error } = await sb.from('menu_items').select('*').order('id');
+  const { data, error } = await sb.from('menu_items').select('*').order('sort_order').order('id');
   if (error) { console.error('Menu load error:', error); return; }
   if (data && data.length) {
     MENU = data.map(r => ({
       id: r.id, name: r.name, price: r.price,
       hpp: r.hpp || 0,
-      cat: r.category, emoji: r.emoji || '☕', available: r.available
+      cat: r.category, emoji: r.emoji || '☕', available: r.available,
+      sort_order: r.sort_order || r.id,
     }));
-    // Sync categories from actual DB data
     const dbCats = [...new Set(MENU.map(m => m.cat).filter(Boolean))];
     if (dbCats.length) CATEGORIES = dbCats;
-    // Reset filter to Semua so all items show
     currentFilter = 'Semua';
   }
 }
@@ -2236,11 +2233,13 @@ function filterMenu(q) {
 }
 
 function renderMenu() {
-  const items = MENU.filter(m => {
-    const matchCat = currentFilter === 'Semua' || m.cat === currentFilter;
-    const matchSearch = !currentSearch || m.name.toLowerCase().includes(currentSearch);
-    return matchCat && matchSearch;
-  });
+  const items = MENU
+    .filter(m => {
+      const matchCat = currentFilter === 'Semua' || m.cat === currentFilter;
+      const matchSearch = !currentSearch || m.name.toLowerCase().includes(currentSearch);
+      return matchCat && matchSearch;
+    })
+    .sort((a, b) => (a.sort_order||0) - (b.sort_order||0));
   const grid = document.getElementById('menu-grid');
   grid.innerHTML = items.map(m => `
     <div class="menu-card ${!m.available ? 'out-of-stock' : ''}" onclick="${m.available ? `addToCart(${m.id})` : ''}">
@@ -3504,20 +3503,26 @@ function showSettingsPanel(name) {
 // ── Menu Management ──
 function renderMenuMgmt() {
   const filterCat = document.getElementById('filter-cat-mgmt').value;
-  // Populate filter dropdown
   const sel = document.getElementById('filter-cat-mgmt');
   const prev = sel.value;
   sel.innerHTML = '<option value="">Semua Kategori</option>' +
     CATEGORIES.map(c => `<option value="${c}" ${prev===c?'selected':''}>${c}</option>`).join('');
 
-  const items = MENU.filter(m => !filterCat || m.cat === filterCat);
+  const items = MENU
+    .filter(m => !filterCat || m.cat === filterCat)
+    .sort((a, b) => (a.sort_order||0) - (b.sort_order||0));
   document.getElementById('menu-count-label').textContent = `${items.length} item`;
 
   document.getElementById('menu-mgmt-list').innerHTML = items.map(m => {
     const margin = m.hpp > 0 ? Math.round((m.price - m.hpp) / m.price * 100) : null;
     const profit = m.hpp > 0 ? m.price - m.hpp : null;
     return `
-    <div class="menu-mgmt-item">
+    <div class="menu-mgmt-item" draggable="true" data-id="${m.id}"
+      ondragstart="menuDragStart(event)"
+      ondragover="menuDragOver(event)"
+      ondrop="menuDrop(event)"
+      ondragend="menuDragEnd(event)">
+      <div class="mmi-drag" title="Drag untuk ubah urutan">⠿</div>
       <div class="mmi-avail ${m.available ? 'on' : 'off'}" title="${m.available ? 'Tersedia' : 'Habis'}" onclick="toggleAvail(${m.id})"></div>
       <div class="mmi-emoji" onclick="openEditMenu(${m.id})">${m.emoji}</div>
       <div class="mmi-info">
@@ -3536,6 +3541,59 @@ function renderMenuMgmt() {
       </div>
     </div>`
   }).join('') || '<div style="text-align:center;padding:30px;color:var(--text-dim)">Tidak ada menu</div>';
+}
+
+// ── MENU DRAG & DROP ──
+let dragSrcId = null;
+
+function menuDragStart(e) {
+  dragSrcId = parseInt(e.currentTarget.dataset.id);
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function menuDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.menu-mgmt-item').forEach(el => el.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+
+function menuDragEnd(e) {
+  document.querySelectorAll('.menu-mgmt-item').forEach(el => {
+    el.classList.remove('dragging', 'drag-over');
+  });
+}
+
+async function menuDrop(e) {
+  e.preventDefault();
+  const targetId = parseInt(e.currentTarget.dataset.id);
+  if (dragSrcId === targetId) return;
+
+  // Reorder MENU array
+  const srcIdx = MENU.findIndex(m => m.id === dragSrcId);
+  const tgtIdx = MENU.findIndex(m => m.id === targetId);
+  if (srcIdx === -1 || tgtIdx === -1) return;
+
+  // Move src to target position
+  const [moved] = MENU.splice(srcIdx, 1);
+  MENU.splice(tgtIdx, 0, moved);
+
+  // Update sort_order for all items
+  MENU.forEach((m, i) => { m.sort_order = i + 1; });
+
+  // Save to Supabase in parallel
+  if (SUPABASE_CONFIGURED) {
+    await Promise.all(MENU.map(m =>
+      sb.from('menu_items').update({ sort_order: m.sort_order }).eq('id', m.id)
+    ));
+  }
+
+  // Re-render both list and kasir menu
+  renderMenuMgmt();
+  renderMenu();
+  renderCatPills();
+  showToast('Urutan menu disimpan ✅', 'success');
 }
 
 async function toggleAvail(id) {
