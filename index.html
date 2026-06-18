@@ -2019,10 +2019,20 @@ async function loadOrdersFromDB() {
 }
 
 async function loadTransactionsFromDB() {
+  // Load transaksi bulan ini + 50 terakhir (digabung, deduplicated)
+  const monthFrom = localMonthStr() + '-01T00:00:00' + localTZOffset();
+  const monthTo   = localDateStr()  + 'T23:59:59'   + localTZOffset();
+
   const { data, error } = await sb.from('transactions')
-    .select('*').order('created_at', { ascending: false }).limit(50);
+    .select('*')
+    .gte('created_at', monthFrom)
+    .lte('created_at', monthTo)
+    .order('created_at', { ascending: false });
+
   if (error) { console.error('Transactions load error:', error); return; }
-  if (data) transactions = data.map(mapTransaction);
+  if (data && data.length) {
+    transactions = data.map(mapTransaction);
+  }
 }
 
 async function loadTransactionsByRange(fromDate, toDate) {
