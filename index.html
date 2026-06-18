@@ -1682,10 +1682,6 @@
       <div class="s-label">Aktual Disetor ke Owner (Rp)</div>
       <input class="s-input" type="number" id="shift-setoran" placeholder="0" oninput="updateSelisih()">
     </div>
-    <div id="shift-selisih-row" style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;margin-bottom:8px">
-      <span style="color:var(--text-dim)">Selisih (Harus Disetor − Aktual)</span>
-      <span id="shift-selisih-val" style="font-family:'JetBrains Mono';font-weight:700">Rp 0</span>
-    </div>
     <div class="s-field">
       <div class="s-label">Catatan Penutupan (opsional)</div>
       <input class="s-input" type="text" id="shift-close-note" placeholder="Catatan serah terima...">
@@ -4201,10 +4197,6 @@ async function showShiftDetail(id) {
         </div>
         <div style="font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:8px;margin-top:4px;letter-spacing:.5px">REALISASI SETOR</div>
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Aktual Disetor</span><span style="font-family:'JetBrains Mono';color:var(--green)">${fmt(s.cash_setoran||0)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
-          <span>Selisih</span>
-          <span style="font-family:'JetBrains Mono';color:${(s.selisih||0)===0?'var(--green)':'var(--red)'}">${fmt(s.selisih||0)}</span>
-        </div>
       </div>
       ${s.note ? `<div style="background:var(--surface2);padding:10px;border-radius:8px;font-size:12px;color:var(--text-dim)">Catatan: ${s.note}</div>` : ''}
     </div>`;
