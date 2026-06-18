@@ -4565,6 +4565,16 @@ async function renderStock() {
   await loadStockItems();
   await loadStockLogs(dateStr);
 
+  // Load sisa kemarin untuk stok awal hari ini
+  const yesterday = new Date(dateStr);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = localDateStr(yesterday);
+  let yesterdayLogs = [];
+  if (SUPABASE_CONFIGURED) {
+    const { data } = await sb.from('stock_logs').select('*').eq('date', yesterdayStr);
+    if (data) yesterdayLogs = data;
+  }
+
   // Transaksi hari itu
   const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
   const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
@@ -4576,7 +4586,6 @@ async function renderStock() {
   // Summary cards
   let totalMasuk = 0, totalTerjual = 0, totalSisa = 0;
 
-  // Stock items cards
   const grid = document.getElementById('stock-items-grid');
   const inputGrid = document.getElementById('stock-input-grid');
   grid.innerHTML = '';
@@ -4586,25 +4595,30 @@ async function renderStock() {
 
   stockItems.forEach(item => {
     const log = stockLogs.find(l => l.item_id === item.id);
-    const stokMasuk = log ? log.stok_masuk : 0;
-    // Selalu hitung terjual dari transaksi live (bukan dari DB)
-    const terjual = calcTerjual(item.name, dayTxns);
-    const sisa = Math.max(0, stokMasuk - terjual);
+    const yLog = yesterdayLogs.find(l => l.item_id === item.id);
 
-    totalMasuk += stokMasuk;
+    // Sisa kemarin jadi stok bawaan hari ini
+    const sisaKemarin = yLog ? yLog.sisa : 0;
+    // Stok masuk hari ini (dari input), kalau belum ada log pakai sisa kemarin
+    const stokMasuk = log ? log.stok_masuk : sisaKemarin;
+    // Total stok = sisa kemarin + stok masuk hari ini
+    const totalStok = sisaKemarin + (log ? log.stok_masuk : 0);
+
+    const terjual = calcTerjual(item.name, dayTxns);
+    const sisa = Math.max(0, totalStok - terjual);
+
+    totalMasuk += totalStok;
     totalTerjual += terjual;
     totalSisa += sisa;
 
     // Alert check
-    if (stokMasuk > 0 && sisa <= item.alert_threshold) alerts.push(item.name + ': sisa ' + sisa + ' pc');
+    if (totalStok > 0 && sisa <= item.alert_threshold) alerts.push(item.name + ': sisa ' + sisa + ' pc');
 
     // Status color
-    const pct = stokMasuk > 0 ? sisa / stokMasuk : 0;
     const statusColor = sisa <= 0 ? 'var(--red)' : sisa <= item.alert_threshold ? '#D4A017' : 'var(--green)';
     const statusEmoji = sisa <= 0 ? '🔴' : sisa <= item.alert_threshold ? '🟡' : '🟢';
 
     // Estimasi habis
-    const txnsPerHour = dayTxns.length;
     let estimasi = '';
     if (terjual > 0 && sisa > 0) {
       const lajuPerJam = terjual / (new Date().getHours() || 1);
@@ -4616,8 +4630,7 @@ async function renderStock() {
       }
     }
 
-    // Progress bar
-    const progPct = stokMasuk > 0 ? Math.max(0, Math.min(100, (sisa/stokMasuk)*100)) : 0;
+    const progPct = totalStok > 0 ? Math.max(0, Math.min(100, (sisa/totalStok)*100)) : 0;
 
     grid.innerHTML += `
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
@@ -4625,8 +4638,9 @@ async function renderStock() {
           <div style="font-weight:700;font-size:15px">${statusEmoji} ${item.name}</div>
           <div style="font-size:11px;color:var(--text-dim)">${item.unit}</div>
         </div>
+        ${sisaKemarin > 0 ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Sisa kemarin: ${sisaKemarin} ${item.unit} + Tambahan: ${log ? log.stok_masuk : 0} ${item.unit}</div>` : ''}
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;text-align:center">
-          <div><div style="font-size:11px;color:var(--text-dim)">Stok</div><div style="font-size:18px;font-weight:700">${stokMasuk}</div></div>
+          <div><div style="font-size:11px;color:var(--text-dim)">Total Stok</div><div style="font-size:18px;font-weight:700">${totalStok}</div></div>
           <div><div style="font-size:11px;color:var(--text-dim)">Terjual</div><div style="font-size:18px;font-weight:700;color:var(--amber)">${terjual}</div></div>
           <div><div style="font-size:11px;color:var(--text-dim)">Sisa</div><div style="font-size:18px;font-weight:700;color:${statusColor}">${sisa}</div></div>
         </div>
@@ -4636,13 +4650,13 @@ async function renderStock() {
         ${estimasi ? `<div style="font-size:11px;color:var(--text-dim)">${estimasi}</div>` : ''}
       </div>`;
 
-    // Input form
+    // Input form — hanya untuk tambahan stok hari ini
     inputGrid.innerHTML += `
       <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:var(--radius-sm);padding:10px 14px">
         <div style="font-weight:600;min-width:70px">${item.name}</div>
-        <div style="font-size:12px;color:var(--text-dim);flex:1">Stok masuk hari ini</div>
-        <input type="number" id="stock-input-${item.id}" value="${stokMasuk || ''}" placeholder="0"
-          style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);text-align:center;font-size:14px">
+        <div style="font-size:12px;color:var(--text-dim);flex:1">Sisa kemarin: <strong>${sisaKemarin}</strong> + Tambah hari ini</div>
+        <input type="number" id="stock-input-${item.id}" value="0" placeholder="0"
+          style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);text-align:center;font-size:14px" min="0">
         <span style="font-size:12px;color:var(--text-dim)">${item.unit}</span>
       </div>`;
   });
@@ -4676,21 +4690,32 @@ async function saveStockInput() {
     return tt && tt >= dayStart && tt <= dayEnd;
   });
 
+  // Load sisa kemarin
+  const yesterday = new Date(dateStr);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = localDateStr(yesterday);
+  const { data: yLogs } = await sb.from('stock_logs').select('*').eq('date', yesterdayStr);
+
   for (const item of stockItems) {
     const input = document.getElementById('stock-input-' + item.id);
     if (!input) continue;
-    const stokMasuk = parseInt(input.value) || 0;
-    // Selalu hitung dari transaksi live
+    const tambahan = parseInt(input.value) || 0;
+    const yLog = yLogs ? yLogs.find(l => l.item_id === item.id) : null;
+    const sisaKemarin = yLog ? yLog.sisa : 0;
+    const totalStok = sisaKemarin + tambahan;
     const terjual = calcTerjual(item.name, dayTxns);
-    const sisa = Math.max(0, stokMasuk - terjual);
+    const sisa = Math.max(0, totalStok - terjual);
 
     await sb.from('stock_logs').upsert({
       item_id: item.id,
       date: dateStr,
-      stok_masuk: stokMasuk,
+      stok_masuk: tambahan,  // hanya tambahan hari ini
       terjual,
       sisa,
     }, { onConflict: 'item_id,date' });
+
+    // Reset input ke 0
+    input.value = '0';
   }
 
   showToast('Stok disimpan ✅', 'success');
