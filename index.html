@@ -4336,9 +4336,9 @@ async function openCloseShiftModal() {
     ${expGaji > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
       <span style="color:var(--text-dim)">ℹ Gaji (non-kas, tidak dipotong)</span><span style="font-family:'JetBrains Mono';color:var(--amber)">${fmt(expGaji)}</span>
     </div>` : ''}
-    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;background:var(--amber-dim);border:1px solid var(--amber);padding:8px 10px;border-radius:8px;margin-top:8px">
-      <span style="color:var(--amber)">Harus Disetor ke Owner</span>
-      <span style="font-family:'JetBrains Mono';color:var(--amber)">${fmt(Math.max(0, expectedSetoran))}</span>
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;background:${expectedSetoran < 0 ? 'var(--surface3)' : 'var(--amber-dim)'};border:1px solid ${expectedSetoran < 0 ? 'var(--red)' : 'var(--amber)'};padding:8px 10px;border-radius:8px;margin-top:8px">
+      <span style="color:${expectedSetoran < 0 ? 'var(--red)' : 'var(--amber)'}">Harus Disetor ke Owner</span>
+      <span style="font-family:'JetBrains Mono';color:${expectedSetoran < 0 ? 'var(--red)' : 'var(--amber)'}">${fmt(expectedSetoran)}</span>
     </div>`;
 
   document.getElementById('shift-setoran').value = '';
@@ -4347,7 +4347,7 @@ async function openCloseShiftModal() {
   document.getElementById('close-shift-modal').dataset.totalCash = totalCash;
   document.getElementById('close-shift-modal').dataset.totalSales = totalSales;
   document.getElementById('close-shift-modal').dataset.totalDigital = totalDigital;
-  document.getElementById('close-shift-modal').dataset.expectedSetoran = Math.max(0, expectedSetoran);
+  document.getElementById('close-shift-modal').dataset.expectedSetoran = expectedSetoran;
 
   openModal('close-shift-modal');
 }
