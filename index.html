@@ -4417,7 +4417,9 @@ async function saveTopup() {
 async function getShiftTopups(shiftId) {
   if (!SUPABASE_CONFIGURED) return [];
   const { data } = await sb.from('cash_topups').select('*').eq('shift_id', shiftId);
-  return data || [];
+  // Exclude entri "Modal awal shift" — itu sudah dihitung terpisah sebagai modal_awal,
+  // jangan dihitung dobel di Tambahan Kas
+  return (data || []).filter(t => t.note !== 'Modal awal shift (talangan owner)');
 }
 
 async function closeShift() {
