@@ -4166,13 +4166,11 @@ async function showShiftDetail(id) {
   const opened = new Date(s.opened_at).toLocaleString('id-ID');
   const closed = s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID') : 'Masih berjalan';
 
-  // Load pengeluaran berdasarkan tanggal shift
+  // Load pengeluaran berdasarkan shift_id (bukan tanggal)
   let expKas = 0, expGaji = 0;
   if (SUPABASE_CONFIGURED) {
-    const shiftDateStr = localDateStr(new Date(s.opened_at));
     const { data } = await sb.from('expenses').select('category,amount')
-      .gte('created_at', shiftDateStr + 'T00:00:00' + localTZOffset())
-      .lte('created_at', shiftDateStr + 'T23:59:59' + localTZOffset());
+      .eq('shift_id', s.id);
     if (data) {
       const KAS_CATS = ['Bahan Baku','Operasional','Lainnya'];
       expKas  = data.filter(e => KAS_CATS.includes(e.category)).reduce((s,e) => s+e.amount, 0);
@@ -4257,13 +4255,11 @@ async function openCloseShiftModal() {
   const totalDigital = totalSales - totalCash;
   const modalAwal = currentShift.modal_awal || 0;
 
-  // Load pengeluaran shift ini berdasarkan tanggal shift dibuka
+  // Load pengeluaran shift ini berdasarkan shift_id (bukan tanggal)
   let expKas = 0, expGaji = 0;
   if (SUPABASE_CONFIGURED) {
-    const shiftDateStr = localDateStr(new Date(currentShift.opened_at));
     const { data } = await sb.from('expenses').select('category,amount')
-      .gte('created_at', shiftDateStr + 'T00:00:00' + localTZOffset())
-      .lte('created_at', shiftDateStr + 'T23:59:59' + localTZOffset());
+      .eq('shift_id', currentShift.id);
     if (data) {
       const KAS_CATS = ['Bahan Baku','Operasional','Lainnya'];
       expKas = data.filter(e => KAS_CATS.includes(e.category)).reduce((s,e) => s+e.amount, 0);
