@@ -5037,7 +5037,13 @@ async function renderRevenue() {
       });
     }
   });
-  const labaBersih = omsetKotor - totalHPP - totalExp;
+  // ── HPP DIKESAMPINGKAN SEMENTARA ──
+  // Alasan: HPP per menu belum dihitung secara akurat (masih estimasi kasar).
+  // Laba Bersih sementara pakai rumus simpel: Omset - Pengeluaran (lebih jujur & sesuai kas riil).
+  // totalHPP tetap dihitung & ditampilkan di kartu (untuk referensi), tapi TIDAK dipakai di labaBersih.
+  // Kalau nanti HPP sudah akurat per menu, tinggal ganti baris di bawah:
+  //   const labaBersih = omsetKotor - totalHPP - totalExp;
+  const labaBersih = omsetKotor - totalExp;
 
   // Load talangan owner (cash_topups yang is_reimbursable=true & belum direimburse, sepanjang waktu — bukan hanya bulan ini)
   let talanganList = [];
@@ -5053,9 +5059,9 @@ async function renderRevenue() {
   const months = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   document.getElementById('rev-summary').innerHTML = [
     { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length+' transaksi' },
-    { label:'Total HPP', val: fmt(totalHPP), sub: 'harga pokok', color:'var(--red)' },
-    { label:'Pengeluaran', val: fmt(totalExp), sub: 'operasional', color:'var(--red)' },
-    { label:'Laba Bersih', val: fmt(labaBersih), sub: months[month]+' '+year, color: labaBersih >= 0 ? 'var(--green)' : 'var(--red)' },
+    { label:'Total HPP', val: fmt(totalHPP), sub: 'referensi, blm dihitung', color:'var(--text-dim)' },
+    { label:'Pengeluaran', val: fmt(totalExp), sub: 'dikurangi dari omset', color:'var(--red)' },
+    { label:'Laba Bersih', val: fmt(labaBersih), sub: months[month]+' '+year+' (Omset−Pengeluaran)', color: labaBersih >= 0 ? 'var(--green)' : 'var(--red)' },
   ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:16px;${s.color?'color:'+s.color:''}">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
 
   // Talangan Owner section
@@ -5092,9 +5098,10 @@ async function renderRevenue() {
   // Cari penerima talangan (selalu 1 orang, ditandai sebagai pemberi talangan)
   const namaPenalang = 'Bayu Randu';
 
-  document.getElementById('rev-shares').innerHTML = labaUntukDibagi <= 0
-    ? `<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Laba bersih Rp 0 atau negatif</div>`
-    : `<table style="width:100%;border-collapse:collapse;font-size:13px">
+  document.getElementById('rev-shares').innerHTML = profitShares.length === 0
+    ? `<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Belum ada data pembagian. Atur di tab "Kelola Pembagian".</div>`
+    : `${labaUntukDibagi <= 0 ? `<div style="font-size:12px;color:var(--red);margin-bottom:10px">⚠️ Laba bersih ${labaUntukDibagi < 0 ? 'negatif' : 'Rp 0'} — belum ada yang bisa dibagi bulan ini</div>` : ''}
+       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)">
           <th style="padding:8px 4px;text-align:left">Nama</th>
           <th style="padding:8px 4px;text-align:center">%</th>
@@ -5102,7 +5109,7 @@ async function renderRevenue() {
           ${totalTalangan > 0 ? '<th style="padding:8px 4px;text-align:right">Reimburse</th><th style="padding:8px 4px;text-align:right">Total Diterima</th>' : ''}
         </tr></thead><tbody>
         ${profitShares.map(p => {
-          const bagian = Math.round(labaUntukDibagi * parseFloat(p.percentage) / 100);
+          const bagian = labaUntukDibagi > 0 ? Math.round(labaUntukDibagi * parseFloat(p.percentage) / 100) : 0;
           const isPenalang = totalTalangan > 0 && p.name.trim().toLowerCase() === namaPenalang.toLowerCase();
           const reimburseAmt = isPenalang ? totalTalangan : 0;
           const totalDiterima = bagian + reimburseAmt;
