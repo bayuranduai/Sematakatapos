@@ -1429,6 +1429,7 @@
             <select class="s-input" id="rev-year" style="width:100px" onchange="renderRevenue()"></select>
           </div>
           <div id="rev-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
+          <div id="rev-talangan"></div>
           <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--amber)">Pembagian Hasil</div>
           <div id="rev-shares"></div>
         </div>
@@ -1707,6 +1708,10 @@
       <div class="s-label">Catatan (opsional)</div>
       <input class="s-input" type="text" id="topup-note" placeholder="Contoh: tambahan dari owner">
     </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;font-size:13px;color:var(--text-dim)">
+      <input type="checkbox" id="topup-reimbursable" style="width:16px;height:16px;accent-color:var(--amber)">
+      Ini talangan pribadi owner (perlu di-reimburse)
+    </label>
     <button class="confirm-btn" style="background:var(--green)" onclick="saveTopup()">+ Simpan Tambahan Kas</button>
   </div>
 </div>
@@ -4361,24 +4366,27 @@ function openTopupModal() {
   if (!currentShift) { showToast('Tidak ada shift aktif', 'error'); return; }
   document.getElementById('topup-amount').value = '';
   document.getElementById('topup-note').value = '';
+  document.getElementById('topup-reimbursable').checked = false;
   openModal('topup-modal');
 }
 
 async function saveTopup() {
   const amount = parseInt(document.getElementById('topup-amount').value);
   const note = document.getElementById('topup-note').value.trim();
+  const isReimbursable = document.getElementById('topup-reimbursable').checked;
   if (!amount || amount <= 0) { showToast('Jumlah tidak valid', 'error'); return; }
   if (!currentShift) { showToast('Tidak ada shift aktif', 'error'); return; }
 
   if (SUPABASE_CONFIGURED) {
     const { error } = await sb.from('cash_topups').insert({
       shift_id: currentShift.id, amount, note: note || null,
+      is_reimbursable: isReimbursable,
     });
     if (error) { console.error('Topup error:', error); showToast('Gagal simpan', 'error'); return; }
   }
 
   closeModal('topup-modal');
-  showToast('Kas ditambah: ' + fmt(amount) + ' ✅', 'success');
+  showToast('Kas ditambah: ' + fmt(amount) + (isReimbursable ? ' (talangan owner)' : '') + ' ✅', 'success');
   renderShiftLiveStats();
 }
 
@@ -5005,6 +5013,17 @@ async function renderRevenue() {
   });
   const labaBersih = omsetKotor - totalHPP - totalExp;
 
+  // Load talangan owner (cash_topups yang is_reimbursable=true & belum direimburse, sepanjang waktu — bukan hanya bulan ini)
+  let talanganList = [];
+  if (SUPABASE_CONFIGURED) {
+    const { data } = await sb.from('cash_topups')
+      .select('*').eq('is_reimbursable', true).eq('reimbursed', false)
+      .order('created_at', { ascending: false });
+    if (data) talanganList = data;
+  }
+  const totalTalangan = talanganList.reduce((s, t) => s + t.amount, 0);
+  const labaSetelahReimburse = labaBersih - totalTalangan;
+
   const months = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   document.getElementById('rev-summary').innerHTML = [
     { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length+' transaksi' },
@@ -5013,8 +5032,37 @@ async function renderRevenue() {
     { label:'Laba Bersih', val: fmt(labaBersih), sub: months[month]+' '+year, color: labaBersih >= 0 ? 'var(--green)' : 'var(--red)' },
   ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:16px;${s.color?'color:'+s.color:''}">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
 
+  // Talangan Owner section
+  if (totalTalangan > 0) {
+    document.getElementById('rev-talangan').innerHTML = `
+      <div style="background:var(--surface2);border:1px solid var(--amber);border-radius:var(--radius);padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-weight:700;color:var(--amber);font-size:13px">⚠️ Talangan Owner (belum direimburse)</span>
+          <span style="font-family:'JetBrains Mono';font-weight:800;color:var(--amber)">${fmt(totalTalangan)}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+          ${talanganList.map(t => `
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 8px;background:var(--surface);border-radius:6px">
+              <span style="color:var(--text-dim)">${new Date(t.created_at).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} ${t.note ? '— '+t.note : ''}</span>
+              <span style="display:flex;align-items:center;gap:8px">
+                <span style="font-family:'JetBrains Mono';font-weight:600">${fmt(t.amount)}</span>
+                <button class="k-btn" onclick="reimburseTopup(${t.id})" style="margin:0;padding:4px 10px;font-size:11px">Reimburse</button>
+              </span>
+            </div>`).join('')}
+        </div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;font-size:13px">
+          <span style="color:var(--text-dim)">Laba Bersih Setelah Reimburse</span>
+          <span style="font-family:'JetBrains Mono';font-weight:800;color:${labaSetelahReimburse>=0?'var(--green)':'var(--red)'}">${fmt(labaSetelahReimburse)}</span>
+        </div>
+      </div>`;
+  } else {
+    document.getElementById('rev-talangan').innerHTML = '';
+  }
+
+  // Pembagian hasil dihitung dari laba SETELAH reimburse talangan
+  const labaUntukDibagi = labaSetelahReimburse;
   const totalPct = profitShares.reduce((s,p) => s + parseFloat(p.percentage), 0);
-  document.getElementById('rev-shares').innerHTML = labaBersih <= 0
+  document.getElementById('rev-shares').innerHTML = labaUntukDibagi <= 0
     ? `<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Laba bersih Rp 0 atau negatif</div>`
     : `<table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)">
@@ -5023,7 +5071,7 @@ async function renderRevenue() {
           <th style="padding:8px 4px;text-align:right">Bagian</th>
         </tr></thead><tbody>
         ${profitShares.map(p => {
-          const bagian = Math.round(labaBersih * parseFloat(p.percentage) / 100);
+          const bagian = Math.round(labaUntukDibagi * parseFloat(p.percentage) / 100);
           return `<tr style="border-bottom:1px solid var(--surface2)">
             <td style="padding:10px 4px;font-weight:600">${p.name}</td>
             <td style="padding:10px 4px;text-align:center;color:var(--amber)">${p.percentage}%</td>
@@ -5033,10 +5081,22 @@ async function renderRevenue() {
         <tr style="border-top:2px solid var(--border);font-weight:800">
           <td style="padding:10px 4px">Total</td>
           <td style="padding:10px 4px;text-align:center">${totalPct}%</td>
-          <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';color:var(--green)">${fmt(labaBersih)}</td>
+          <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';color:var(--green)">${fmt(labaUntukDibagi)}</td>
         </tr></tbody></table>`;
 
   renderShareEditList();
+}
+
+async function reimburseTopup(id) {
+  if (!confirm('Tandai talangan ini sudah direimburse ke owner?')) return;
+  if (SUPABASE_CONFIGURED) {
+    const { error } = await sb.from('cash_topups').update({
+      reimbursed: true, reimbursed_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) { showToast('Gagal update', 'error'); return; }
+  }
+  showToast('Talangan ditandai sudah direimburse ✅', 'success');
+  renderRevenue();
 }
 
 function switchRevTab(tab) {
