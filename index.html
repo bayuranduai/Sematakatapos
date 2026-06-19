@@ -3047,10 +3047,10 @@ async function renderStatCards(txns, dateStr) {
 
   document.getElementById('stat-grid').innerHTML = [
     { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length + ' transaksi' },
-    { label:'Omset Bersih', val: hppAvailable ? fmt(omsetBersih) : '—', sub: hppAvailable ? 'Setelah HPP & Pajak' : 'Isi HPP di menu' },
-    { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) : 'Isi HPP di menu' },
-    { label:'Total Pengeluaran', val: fmt(totalExpenses), sub: 'operasional periode ini' },
+    { label:'Total Pengeluaran', val: fmt(totalExpenses), sub: 'dikurangi dari omset' },
+    { label:'Laba Bersih', val: fmt(omsetKotor - totalExpenses), sub: '(Omset−Pengeluaran)', color: (omsetKotor - totalExpenses) >= 0 ? 'var(--green)' : 'var(--red)' },
     { label:'Total Reimburse', val: fmt(totalReimburse), sub: 'talangan owner', color: totalReimburse > 0 ? 'var(--amber)' : '' },
+    { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) + ' (referensi)' : 'Isi HPP di menu' },
     { label:'Rata-rata Order', val: fmt(avgOrder), sub: 'per transaksi' },
     { label:'Total Diskon', val: fmt(totalDiscount), sub: 'diberikan' },
     { label:'Item Terjual', val: totalItems, sub: 'total item' },
@@ -5059,7 +5059,6 @@ async function renderRevenue() {
   const months = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   document.getElementById('rev-summary').innerHTML = [
     { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length+' transaksi' },
-    { label:'Total HPP', val: fmt(totalHPP), sub: 'referensi, blm dihitung', color:'var(--text-dim)' },
     { label:'Pengeluaran', val: fmt(totalExp), sub: 'dikurangi dari omset', color:'var(--red)' },
     { label:'Laba Bersih', val: fmt(labaBersih), sub: months[month]+' '+year+' (Omset−Pengeluaran)', color: labaBersih >= 0 ? 'var(--green)' : 'var(--red)' },
   ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="font-size:16px;${s.color?'color:'+s.color:''}">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
