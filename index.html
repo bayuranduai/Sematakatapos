@@ -4306,8 +4306,6 @@ async function openCloseShiftModal() {
 
   document.getElementById('shift-setoran').value = '';
   document.getElementById('shift-close-note').value = '';
-  document.getElementById('shift-selisih-val').textContent = fmt(0);
-  document.getElementById('shift-selisih-val').style.color = 'var(--text-dim)';
 
   document.getElementById('close-shift-modal').dataset.totalCash = totalCash;
   document.getElementById('close-shift-modal').dataset.totalSales = totalSales;
@@ -4318,13 +4316,8 @@ async function openCloseShiftModal() {
 }
 
 function updateSelisih() {
-  const modal = document.getElementById('close-shift-modal');
-  const expectedSetoran = parseInt(modal.dataset.expectedSetoran) || 0;
-  const setoran = parseInt(document.getElementById('shift-setoran').value) || 0;
-  const selisih = setoran - expectedSetoran;
-  const el = document.getElementById('shift-selisih-val');
-  el.textContent = (selisih >= 0 ? '+' : '') + fmt(selisih);
-  el.style.color = selisih === 0 ? 'var(--green)' : selisih > 0 ? 'var(--amber)' : 'var(--red)';
+  // Selisih row sudah dihapus dari UI, function ini sengaja dikosongkan
+  // tapi tetap ada karena dipanggil dari oninput shift-setoran
 }
 
 async function closeShift() {
