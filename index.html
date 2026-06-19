@@ -4603,7 +4603,14 @@ async function renderStock() {
     // Total stok = sisa kemarin + stok masuk hari ini
     const totalStok = sisaKemarin + (log ? log.stok_masuk : 0);
 
-    const terjual = calcTerjual(item.name, dayTxns);
+    // Hanya hitung terjual dari transaksi SETELAH input stok terakhir
+    // (transaksi sebelum input sudah "lewat", tidak ngurangi stok baru)
+    const cutoffTime = log?.last_input_at ? new Date(log.last_input_at) : dayStart;
+    const relevantTxns = dayTxns.filter(t => {
+      const tt = t.timestamp ? new Date(t.timestamp) : null;
+      return tt && tt >= cutoffTime;
+    });
+    const terjual = calcTerjual(item.name, relevantTxns);
     const sisa = Math.max(0, totalStok - terjual);
 
     totalMasuk += totalStok;
@@ -4682,12 +4689,7 @@ async function saveStockInput() {
   const dateStr = document.getElementById('stock-date-filter').value || localDateStr();
   if (!SUPABASE_CONFIGURED) { showToast('Tidak terhubung ke DB', 'error'); return; }
 
-  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
-  const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
-  const dayTxns = transactions.filter(t => {
-    const tt = t.timestamp ? new Date(t.timestamp) : null;
-    return tt && tt >= dayStart && tt <= dayEnd;
-  });
+  const now = new Date().toISOString();
 
   // Load sisa kemarin
   const yesterday = new Date(dateStr);
@@ -4695,22 +4697,32 @@ async function saveStockInput() {
   const yesterdayStr = localDateStr(yesterday);
   const { data: yLogs } = await sb.from('stock_logs').select('*').eq('date', yesterdayStr);
 
+  // Load log existing hari ini (untuk akumulasi stok_masuk kalau sudah pernah input)
+  const { data: todayLogs } = await sb.from('stock_logs').select('*').eq('date', dateStr);
+
   for (const item of stockItems) {
     const input = document.getElementById('stock-input-' + item.id);
     if (!input) continue;
     const tambahan = parseInt(input.value) || 0;
+    if (tambahan <= 0) continue; // skip item yang tidak diisi
+
     const yLog = yLogs ? yLogs.find(l => l.item_id === item.id) : null;
     const sisaKemarin = yLog ? yLog.sisa : 0;
-    const totalStok = sisaKemarin + tambahan;
-    const terjual = calcTerjual(item.name, dayTxns);
-    const sisa = Math.max(0, totalStok - terjual);
+    const existingLog = todayLogs ? todayLogs.find(l => l.item_id === item.id) : null;
+    const existingMasuk = existingLog ? existingLog.stok_masuk : 0;
 
+    // Akumulasi stok masuk hari ini (kalau sudah pernah input sebelumnya)
+    const totalMasukBaru = existingMasuk + tambahan;
+    const totalStokBaru = sisaKemarin + totalMasukBaru;
+
+    // Reset terjual ke 0 — mulai hitung ulang dari titik input ini
     await sb.from('stock_logs').upsert({
       item_id: item.id,
       date: dateStr,
-      stok_masuk: tambahan,  // hanya tambahan hari ini
-      terjual,
-      sisa,
+      stok_masuk: totalMasukBaru,
+      terjual: 0,
+      sisa: totalStokBaru,
+      last_input_at: now,
     }, { onConflict: 'item_id,date' });
 
     // Reset input ke 0
