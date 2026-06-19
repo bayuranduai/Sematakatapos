@@ -4770,8 +4770,16 @@ async function saveStockInput() {
   const yesterdayStr = localDateStr(yesterday);
   const { data: yLogs } = await sb.from('stock_logs').select('*').eq('date', yesterdayStr);
 
-  // Load log existing hari ini (untuk akumulasi stok_masuk kalau sudah pernah input)
+  // Load log existing hari ini
   const { data: todayLogs } = await sb.from('stock_logs').select('*').eq('date', dateStr);
+
+  // Transaksi hari ini — dibutuhkan untuk hitung terjual REAL-TIME (sama seperti renderStock)
+  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
+  const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
+  const dayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= dayStart && tt <= dayEnd;
+  });
 
   for (const item of stockItems) {
     const input = document.getElementById('stock-input-' + item.id);
@@ -4783,20 +4791,28 @@ async function saveStockInput() {
     const sisaKemarin = yLog ? yLog.sisa : 0;
     const existingLog = todayLogs ? todayLogs.find(l => l.item_id === item.id) : null;
 
-    // Sisa yang BELUM laku saat ini (bukan total stok_masuk dari awal)
-    // Kalau belum pernah input hari ini, sisa saat ini = sisa kemarin
-    const sisaSaatIni = existingLog ? existingLog.sisa : sisaKemarin;
+    // Hitung sisa SAAT INI secara real-time (sama persis logikanya dengan renderStock)
+    // JANGAN baca existingLog.sisa langsung — itu bisa basi karena terjual tidak auto-sync ke DB
+    let sisaSaatIni;
+    if (existingLog) {
+      const cutoffTime = existingLog.last_input_at ? new Date(existingLog.last_input_at) : dayStart;
+      const relevantTxns = dayTxns.filter(t => {
+        const tt = t.timestamp ? new Date(t.timestamp) : null;
+        return tt && tt >= cutoffTime;
+      });
+      const terjualRealtime = calcTerjual(item.name, relevantTxns);
+      sisaSaatIni = Math.max(0, existingLog.stok_masuk - terjualRealtime);
+    } else {
+      sisaSaatIni = sisaKemarin;
+    }
 
-    // Stok baru = sisa yang masih ada + tambahan fisik baru
+    // Stok baru = sisa real-time yang masih ada + tambahan fisik baru
     const totalStokBaru = sisaSaatIni + tambahan;
-    // stok_masuk dicatat sebagai total stok baru ini (jadi basis perhitungan terjual berikutnya)
-    const stokMasukBaru = totalStokBaru;
 
-    // Reset terjual ke 0 — mulai hitung ulang dari titik input ini
     await sb.from('stock_logs').upsert({
       item_id: item.id,
       date: dateStr,
-      stok_masuk: stokMasukBaru,
+      stok_masuk: totalStokBaru,
       terjual: 0,
       sisa: totalStokBaru,
       last_input_at: now,
