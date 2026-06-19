@@ -1458,8 +1458,9 @@
         <div class="shift-meta" id="shift-status-meta">Buka shift untuk mulai mencatat transaksi</div>
         <div class="shift-duration" id="shift-status-duration"></div>
       </div>
-      <div class="shift-actions">
+      <div class="shift-actions" style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="shift-open-btn" id="shift-open-btn" onclick="openShiftModal()">Buka Shift</button>
+        <button class="k-btn" id="shift-topup-btn" onclick="openTopupModal()" style="display:none;margin:0;background:var(--surface2);border:1px solid var(--green);color:var(--green)">+ Tambah Kas</button>
         <button class="shift-close-btn" id="shift-close-btn" onclick="openCloseShiftModal()" style="display:none">Tutup Shift</button>
       </div>
     </div>
@@ -1687,6 +1688,26 @@
       <input class="s-input" type="text" id="shift-close-note" placeholder="Catatan serah terima...">
     </div>
     <button class="confirm-btn" style="background:var(--red)" onclick="closeShift()">Tutup & Setor</button>
+  </div>
+</div>
+
+<!-- TOPUP KAS MODAL -->
+<div class="modal-overlay" id="topup-modal">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">
+      💵 Tambah Kas
+      <button class="modal-close" onclick="closeModal('topup-modal')">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Catat tambahan modal kas di tengah shift (misal owner kasih tambahan uang belanja)</div>
+    <div class="s-field">
+      <div class="s-label">Jumlah Tambahan (Rp)</div>
+      <input class="s-input" type="number" id="topup-amount" placeholder="200000">
+    </div>
+    <div class="s-field">
+      <div class="s-label">Catatan (opsional)</div>
+      <input class="s-input" type="text" id="topup-note" placeholder="Contoh: tambahan dari owner">
+    </div>
+    <button class="confirm-btn" style="background:var(--green)" onclick="saveTopup()">+ Simpan Tambahan Kas</button>
   </div>
 </div>
 
@@ -4078,6 +4099,7 @@ function renderShiftView() {
   const card = document.getElementById('shift-status-card');
   const openBtn = document.getElementById('shift-open-btn');
   const closeBtn = document.getElementById('shift-close-btn');
+  const topupBtn = document.getElementById('shift-topup-btn');
   const liveStats = document.getElementById('shift-live-stats');
 
   if (currentShift) {
@@ -4087,6 +4109,7 @@ function renderShiftView() {
     document.getElementById('shift-status-meta').textContent = 'Dibuka: ' + opened.toLocaleString('id-ID');
     openBtn.style.display = 'none';
     closeBtn.style.display = 'block';
+    topupBtn.style.display = 'block';
     liveStats.style.display = 'block';
     updateShiftDuration();
     if (shiftTimer) clearInterval(shiftTimer);
@@ -4099,6 +4122,7 @@ function renderShiftView() {
     document.getElementById('shift-status-duration').textContent = '';
     openBtn.style.display = 'block';
     closeBtn.style.display = 'none';
+    topupBtn.style.display = 'none';
     liveStats.style.display = 'none';
     if (shiftTimer) clearInterval(shiftTimer);
   }
@@ -4114,7 +4138,7 @@ function updateShiftDuration() {
   document.getElementById('shift-status-duration').textContent = `Durasi: ${h}j ${m}m`;
 }
 
-function renderShiftLiveStats() {
+async function renderShiftLiveStats() {
   if (!currentShift) return;
   const shiftStart = new Date(currentShift.opened_at);
 
@@ -4128,12 +4152,17 @@ function renderShiftLiveStats() {
   const totalCash = shiftTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s, t) => s + t.total, 0);
   const totalDigital = totalSales - totalCash;
 
+  // Load topup kas shift ini
+  const topups = await getShiftTopups(currentShift.id);
+  const totalTopup = topups.reduce((s, t) => s + t.amount, 0);
+
   document.getElementById('shift-stats-grid').innerHTML = [
     { label: 'Total Penjualan', val: fmt(totalSales), sub: shiftTxns.length + ' transaksi' },
     { label: 'Tunai', val: fmt(totalCash), sub: 'cash masuk' },
     { label: 'Digital', val: fmt(totalDigital), sub: 'QRIS/transfer' },
     { label: 'Modal Awal', val: fmt(currentShift.modal_awal || 0), sub: 'uang kas awal' },
-  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
+    ...(totalTopup > 0 ? [{ label: 'Tambahan Kas', val: fmt(totalTopup), sub: topups.length + 'x top up', color: 'var(--green)' }] : []),
+  ].map(s => `<div class="stat-card"><div class="s-label">${s.label}</div><div class="s-val" style="${s.color?'color:'+s.color:''}">${s.val}</div><div class="s-sub">${s.sub}</div></div>`).join('');
 }
 
 function renderShiftHistory() {
@@ -4178,7 +4207,11 @@ async function showShiftDetail(id) {
     }
   }
 
-  const kasBersih = (s.modal_awal||0) + (s.total_cash||0) - expKas;
+  // Load topup kas
+  const topups = await getShiftTopups(s.id);
+  const totalTopup = topups.reduce((sum, t) => sum + t.amount, 0);
+
+  const kasBersih = (s.modal_awal||0) + (s.total_cash||0) + totalTopup - expKas;
 
   document.getElementById('shift-detail-content').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
@@ -4190,9 +4223,10 @@ async function showShiftDetail(id) {
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">Modal Awal (kas diterima)</span><span style="font-family:'JetBrains Mono'">${fmt(s.modal_awal||0)}</span></div>
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">+ Tunai dari Transaksi</span><span style="font-family:'JetBrains Mono';color:var(--amber)">+${fmt(s.total_cash||0)}</span></div>
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--text-dim)">+ Digital (QRIS/Transfer)</span><span style="font-family:'JetBrains Mono'">${fmt(s.total_digital||0)}</span></div>
+        ${totalTopup > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--green)">+ Tambahan Kas (${topups.length}x)</span><span style="font-family:'JetBrains Mono';color:var(--green)">+${fmt(totalTopup)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;margin-bottom:8px;padding:8px;background:var(--surface2);border-radius:6px">
           <span style="font-weight:600">Total Kas di Tangan</span>
-          <span style="font-family:'JetBrains Mono';font-weight:700">${fmt((s.modal_awal||0)+(s.total_cash||0))}</span>
+          <span style="font-family:'JetBrains Mono';font-weight:700">${fmt((s.modal_awal||0)+(s.total_cash||0)+totalTopup)}</span>
         </div>
         ${expKas > 0 || expGaji > 0 ? `
         <div style="font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:8px;letter-spacing:.5px">PENGELUARAN</div>
@@ -4267,7 +4301,11 @@ async function openCloseShiftModal() {
     }
   }
 
-  const expectedSetoran = modalAwal + totalCash - expKas;
+  // Load topup kas shift ini
+  const topups = await getShiftTopups(currentShift.id);
+  const totalTopup = topups.reduce((s, t) => s + t.amount, 0);
+
+  const expectedSetoran = modalAwal + totalCash + totalTopup - expKas;
 
   document.getElementById('close-shift-summary').innerHTML = `
     <div style="font-weight:700;margin-bottom:12px;font-size:14px">Rekap Shift — ${currentShift.kasir_name}</div>
@@ -4289,6 +4327,9 @@ async function openCloseShiftModal() {
     <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
       <span style="color:var(--text-dim)">+ Tunai dari Transaksi</span><span style="font-family:'JetBrains Mono'">${fmt(totalCash)}</span>
     </div>
+    ${totalTopup > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
+      <span style="color:var(--green)">+ Tambahan Kas (${topups.length}x)</span><span style="font-family:'JetBrains Mono';color:var(--green)">+${fmt(totalTopup)}</span>
+    </div>` : ''}
     ${expKas > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
       <span style="color:var(--red)">− Belanja / Operasional</span><span style="font-family:'JetBrains Mono';color:var(--red)">-${fmt(expKas)}</span>
     </div>` : ''}
@@ -4314,6 +4355,37 @@ async function openCloseShiftModal() {
 function updateSelisih() {
   // Selisih row sudah dihapus dari UI, function ini sengaja dikosongkan
   // tapi tetap ada karena dipanggil dari oninput shift-setoran
+}
+
+function openTopupModal() {
+  if (!currentShift) { showToast('Tidak ada shift aktif', 'error'); return; }
+  document.getElementById('topup-amount').value = '';
+  document.getElementById('topup-note').value = '';
+  openModal('topup-modal');
+}
+
+async function saveTopup() {
+  const amount = parseInt(document.getElementById('topup-amount').value);
+  const note = document.getElementById('topup-note').value.trim();
+  if (!amount || amount <= 0) { showToast('Jumlah tidak valid', 'error'); return; }
+  if (!currentShift) { showToast('Tidak ada shift aktif', 'error'); return; }
+
+  if (SUPABASE_CONFIGURED) {
+    const { error } = await sb.from('cash_topups').insert({
+      shift_id: currentShift.id, amount, note: note || null,
+    });
+    if (error) { console.error('Topup error:', error); showToast('Gagal simpan', 'error'); return; }
+  }
+
+  closeModal('topup-modal');
+  showToast('Kas ditambah: ' + fmt(amount) + ' ✅', 'success');
+  renderShiftLiveStats();
+}
+
+async function getShiftTopups(shiftId) {
+  if (!SUPABASE_CONFIGURED) return [];
+  const { data } = await sb.from('cash_topups').select('*').eq('shift_id', shiftId);
+  return data || [];
 }
 
 async function closeShift() {
