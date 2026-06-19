@@ -4505,32 +4505,12 @@ async function renderExpenses() {
     if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Buka shift dulu'; }
   }
 
-  const KAS_CATS = ['Bahan Baku', 'Operasional', 'Lainnya'];
   const NON_KAS_CATS = ['Gaji'];
   const totalExp = expenses.reduce((s, e) => s + e.amount, 0);
-  const expKas = expenses.filter(e => KAS_CATS.includes(e.category)).reduce((s, e) => s + e.amount, 0);
   const expGaji = expenses.filter(e => NON_KAS_CATS.includes(e.category)).reduce((s, e) => s + e.amount, 0);
 
-  // Kas tunai dari semua shift yang overlap hari ini
-  const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
-  const dayEnd = new Date(dateStr + 'T23:59:59' + localTZOffset());
-  const dayTxns = transactions.filter(t => {
-    const tt = t.timestamp ? new Date(t.timestamp) : null;
-    return tt && tt >= dayStart && tt <= dayEnd;
-  });
-  const tunaiFisik = dayTxns.filter(t => t.method === 'tunai' || t.method === 'cash').reduce((s,t) => s+t.total, 0);
-
-  // Modal awal dari semua shift yang buka hari ini
-  const dayShifts = allShifts.filter(s => localDateStr(new Date(s.opened_at)) === dateStr);
-  const modalAwal = dayShifts.reduce((s, sh) => s + (sh.modal_awal||0), 0);
-  const saldoKas = modalAwal + tunaiFisik - expKas;
-
-  document.getElementById('expense-summary').innerHTML = [
-    { label: 'Pengeluaran Kas', val: fmt(expKas), sub: expenses.length + ' item', color: 'var(--red)' },
-    { label: 'Gaji', val: fmt(expGaji), sub: 'non-kas', color: expGaji > 0 ? 'var(--amber)' : '' },
-    { label: 'Kas Tunai Masuk', val: fmt(tunaiFisik), sub: 'modal ' + fmt(modalAwal) },
-    { label: 'Saldo Kas', val: fmt(saldoKas), sub: 'kas - pengeluaran', color: saldoKas >= 0 ? 'var(--green)' : 'var(--red)' },
-  ].map(s => '<div class="stat-card"><div class="s-label">' + s.label + '</div><div class="s-val" style="font-size:18px;' + (s.color ? 'color:'+s.color : '') + '">' + s.val + '</div><div class="s-sub">' + s.sub + '</div></div>').join('');
+  // Stat cards dihapus sesuai permintaan — hanya tampilkan form input + daftar pengeluaran
+  document.getElementById('expense-summary').innerHTML = '';
 
   const el = document.getElementById('expense-list');
   if (!expenses.length) {
@@ -4718,9 +4698,8 @@ async function renderStock() {
           <div style="font-size:11px;color:var(--text-dim)">${item.unit}</div>
         </div>
         ${sisaKemarin > 0 || tambahanTerakhir > 0 ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Sisa kemarin: ${sisaKemarin} ${item.unit} + Tambahan: ${tambahanTerakhir} ${item.unit}</div>` : ''}
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;text-align:center">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;text-align:center">
           <div><div style="font-size:11px;color:var(--text-dim)">Total Stok</div><div style="font-size:18px;font-weight:700">${totalStok}</div></div>
-          <div><div style="font-size:11px;color:var(--text-dim)">Terjual</div><div style="font-size:18px;font-weight:700;color:var(--amber)">${terjual}</div></div>
           <div><div style="font-size:11px;color:var(--text-dim)">Sisa</div><div style="font-size:18px;font-weight:700;color:${statusColor}">${sisa}</div></div>
         </div>
         <div style="background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
