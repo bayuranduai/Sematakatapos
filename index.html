@@ -1664,6 +1664,10 @@
       <div class="s-label">Modal Awal / Uang Kas (Rp)</div>
       <input class="s-input" type="number" id="shift-modal-awal" placeholder="0">
     </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;font-size:13px;color:var(--text-dim)">
+      <input type="checkbox" id="shift-modal-reimbursable" style="width:16px;height:16px;accent-color:var(--amber)">
+      Modal awal ini talangan pribadi owner (perlu di-reimburse)
+    </label>
     <div class="s-field">
       <div class="s-label">Catatan (opsional)</div>
       <input class="s-input" type="text" id="shift-open-note" placeholder="Catatan shift...">
@@ -3033,11 +3037,20 @@ async function renderStatCards(txns, dateStr) {
   const totalItems = txns.reduce((s, t) => s + (t.items ? (t.items.match(/x\d+/g)||[]).reduce((a,m) => a + parseInt(m.slice(1)),0) : 0), 0);
   const saldoHarian = modalAwal + tunaiFisik - expKas;
 
+  // Total talangan owner yang belum direimburse (sepanjang waktu, bukan hanya periode ini)
+  let totalReimburse = 0;
+  if (SUPABASE_CONFIGURED) {
+    const { data: topupData } = await sb.from('cash_topups')
+      .select('amount').eq('is_reimbursable', true).eq('reimbursed', false);
+    if (topupData) totalReimburse = topupData.reduce((s,t) => s+t.amount, 0);
+  }
+
   document.getElementById('stat-grid').innerHTML = [
     { label:'Omset Kotor', val: fmt(omsetKotor), sub: txns.length + ' transaksi' },
     { label:'Omset Bersih', val: hppAvailable ? fmt(omsetBersih) : '—', sub: hppAvailable ? 'Setelah HPP & Pajak' : 'Isi HPP di menu' },
     { label:'Gross Margin', val: grossMargin !== null ? grossMargin + '%' : '—', sub: hppAvailable ? 'HPP ' + fmt(totalHPP) : 'Isi HPP di menu' },
     { label:'Total Pengeluaran', val: fmt(totalExpenses), sub: 'operasional periode ini' },
+    { label:'Total Reimburse', val: fmt(totalReimburse), sub: 'talangan owner', color: totalReimburse > 0 ? 'var(--amber)' : '' },
     { label:'Rata-rata Order', val: fmt(avgOrder), sub: 'per transaksi' },
     { label:'Total Diskon', val: fmt(totalDiscount), sub: 'diberikan' },
     { label:'Item Terjual', val: totalItems, sub: 'total item' },
@@ -4253,6 +4266,7 @@ async function showShiftDetail(id) {
 function openShiftModal() {
   document.getElementById('shift-kasir-name').value = '';
   document.getElementById('shift-modal-awal').value = '';
+  document.getElementById('shift-modal-reimbursable').checked = false;
   document.getElementById('shift-open-note').value = '';
   openModal('open-shift-modal');
 }
@@ -4261,6 +4275,7 @@ async function openShift() {
   const name = document.getElementById('shift-kasir-name').value.trim();
   if (!name) { showToast('Nama kasir tidak boleh kosong', 'error'); return; }
   const modalAwal = parseInt(document.getElementById('shift-modal-awal').value) || 0;
+  const isReimbursable = document.getElementById('shift-modal-reimbursable').checked;
   const note = document.getElementById('shift-open-note').value.trim();
 
   if (SUPABASE_CONFIGURED) {
@@ -4270,6 +4285,15 @@ async function openShift() {
     if (error) { console.error('Open shift error:', error); showToast('Gagal buka shift', 'error'); return; }
     currentShift = data;
     allShifts.unshift(data);
+
+    // Kalau modal awal ditandai talangan owner, catat sebagai cash_topup reimbursable
+    if (isReimbursable && modalAwal > 0) {
+      await sb.from('cash_topups').insert({
+        shift_id: data.id, amount: modalAwal,
+        note: 'Modal awal shift (talangan owner)',
+        is_reimbursable: true,
+      });
+    }
   } else {
     currentShift = { id: Date.now(), kasir_name: name, modal_awal: modalAwal, note, status: 'open', opened_at: new Date().toISOString(), total_sales: 0, total_cash: 0, total_digital: 0 };
     allShifts.unshift(currentShift);
@@ -5062,26 +5086,38 @@ async function renderRevenue() {
   // Pembagian hasil dihitung dari laba SETELAH reimburse talangan
   const labaUntukDibagi = labaSetelahReimburse;
   const totalPct = profitShares.reduce((s,p) => s + parseFloat(p.percentage), 0);
+
+  // Cari penerima talangan (selalu 1 orang, ditandai sebagai pemberi talangan)
+  const namaPenalang = 'Bayu Randu';
+
   document.getElementById('rev-shares').innerHTML = labaUntukDibagi <= 0
     ? `<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Laba bersih Rp 0 atau negatif</div>`
     : `<table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)">
           <th style="padding:8px 4px;text-align:left">Nama</th>
           <th style="padding:8px 4px;text-align:center">%</th>
-          <th style="padding:8px 4px;text-align:right">Bagian</th>
+          <th style="padding:8px 4px;text-align:right">Bagian Profit</th>
+          ${totalTalangan > 0 ? '<th style="padding:8px 4px;text-align:right">Reimburse</th><th style="padding:8px 4px;text-align:right">Total Diterima</th>' : ''}
         </tr></thead><tbody>
         ${profitShares.map(p => {
           const bagian = Math.round(labaUntukDibagi * parseFloat(p.percentage) / 100);
+          const isPenalang = totalTalangan > 0 && p.name.trim().toLowerCase() === namaPenalang.toLowerCase();
+          const reimburseAmt = isPenalang ? totalTalangan : 0;
+          const totalDiterima = bagian + reimburseAmt;
           return `<tr style="border-bottom:1px solid var(--surface2)">
             <td style="padding:10px 4px;font-weight:600">${p.name}</td>
             <td style="padding:10px 4px;text-align:center;color:var(--amber)">${p.percentage}%</td>
             <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';font-weight:700;color:var(--green)">${fmt(bagian)}</td>
+            ${totalTalangan > 0 ? `
+            <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';color:${isPenalang?'var(--amber)':'var(--text-dim)'}">${isPenalang ? fmt(reimburseAmt) : '—'}</td>
+            <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';font-weight:800;color:${isPenalang?'var(--amber)':'var(--green)'}">${fmt(totalDiterima)}</td>` : ''}
           </tr>`;
         }).join('')}
         <tr style="border-top:2px solid var(--border);font-weight:800">
           <td style="padding:10px 4px">Total</td>
           <td style="padding:10px 4px;text-align:center">${totalPct}%</td>
           <td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';color:var(--green)">${fmt(labaUntukDibagi)}</td>
+          ${totalTalangan > 0 ? `<td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono';color:var(--amber)">${fmt(totalTalangan)}</td><td style="padding:10px 4px;text-align:right;font-family:'JetBrains Mono'">${fmt(labaUntukDibagi + totalTalangan)}</td>` : ''}
         </tr></tbody></table>`;
 
   renderShareEditList();
