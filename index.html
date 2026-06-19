@@ -4668,12 +4668,13 @@ async function renderStock() {
     const log = stockLogs.find(l => l.item_id === item.id);
     const yLog = yesterdayLogs.find(l => l.item_id === item.id);
 
-    // Sisa kemarin jadi stok bawaan hari ini
+    // Sisa kemarin (ditampilkan sebagai info saja)
     const sisaKemarin = yLog ? yLog.sisa : 0;
-    // Stok masuk hari ini (dari input), kalau belum ada log pakai sisa kemarin
-    const stokMasuk = log ? log.stok_masuk : sisaKemarin;
-    // Total stok = sisa kemarin + stok masuk hari ini
-    const totalStok = sisaKemarin + (log ? log.stok_masuk : 0);
+
+    // stok_masuk sekarang = TOTAL stok saat terakhir diinput (sudah termasuk sisa kemarin + tambahan)
+    // Kalau belum pernah input hari ini, total stok = sisa kemarin (carry-over otomatis)
+    const totalStok = log ? log.stok_masuk : sisaKemarin;
+    const tambahanTerakhir = log ? (log.stok_masuk - sisaKemarin) : 0;
 
     // Hanya hitung terjual dari transaksi SETELAH input stok terakhir
     // (transaksi sebelum input sudah "lewat", tidak ngurangi stok baru)
@@ -4716,7 +4717,7 @@ async function renderStock() {
           <div style="font-weight:700;font-size:15px">${statusEmoji} ${item.name}</div>
           <div style="font-size:11px;color:var(--text-dim)">${item.unit}</div>
         </div>
-        ${sisaKemarin > 0 ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Sisa kemarin: ${sisaKemarin} ${item.unit} + Tambahan: ${log ? log.stok_masuk : 0} ${item.unit}</div>` : ''}
+        ${sisaKemarin > 0 || tambahanTerakhir > 0 ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Sisa kemarin: ${sisaKemarin} ${item.unit} + Tambahan: ${tambahanTerakhir} ${item.unit}</div>` : ''}
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;text-align:center">
           <div><div style="font-size:11px;color:var(--text-dim)">Total Stok</div><div style="font-size:18px;font-weight:700">${totalStok}</div></div>
           <div><div style="font-size:11px;color:var(--text-dim)">Terjual</div><div style="font-size:18px;font-weight:700;color:var(--amber)">${terjual}</div></div>
@@ -4732,7 +4733,7 @@ async function renderStock() {
     inputGrid.innerHTML += `
       <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:var(--radius-sm);padding:10px 14px">
         <div style="font-weight:600;min-width:70px">${item.name}</div>
-        <div style="font-size:12px;color:var(--text-dim);flex:1">Sisa kemarin: <strong>${sisaKemarin}</strong> + Tambah hari ini</div>
+        <div style="font-size:12px;color:var(--text-dim);flex:1">Sisa saat ini: <strong>${sisa}</strong> + Tambah hari ini</div>
         <input type="number" id="stock-input-${item.id}" value="0" placeholder="0"
           style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);text-align:center;font-size:14px" min="0">
         <span style="font-size:12px;color:var(--text-dim)">${item.unit}</span>
@@ -4781,17 +4782,21 @@ async function saveStockInput() {
     const yLog = yLogs ? yLogs.find(l => l.item_id === item.id) : null;
     const sisaKemarin = yLog ? yLog.sisa : 0;
     const existingLog = todayLogs ? todayLogs.find(l => l.item_id === item.id) : null;
-    const existingMasuk = existingLog ? existingLog.stok_masuk : 0;
 
-    // Akumulasi stok masuk hari ini (kalau sudah pernah input sebelumnya)
-    const totalMasukBaru = existingMasuk + tambahan;
-    const totalStokBaru = sisaKemarin + totalMasukBaru;
+    // Sisa yang BELUM laku saat ini (bukan total stok_masuk dari awal)
+    // Kalau belum pernah input hari ini, sisa saat ini = sisa kemarin
+    const sisaSaatIni = existingLog ? existingLog.sisa : sisaKemarin;
+
+    // Stok baru = sisa yang masih ada + tambahan fisik baru
+    const totalStokBaru = sisaSaatIni + tambahan;
+    // stok_masuk dicatat sebagai total stok baru ini (jadi basis perhitungan terjual berikutnya)
+    const stokMasukBaru = totalStokBaru;
 
     // Reset terjual ke 0 — mulai hitung ulang dari titik input ini
     await sb.from('stock_logs').upsert({
       item_id: item.id,
       date: dateStr,
-      stok_masuk: totalMasukBaru,
+      stok_masuk: stokMasukBaru,
       terjual: 0,
       sisa: totalStokBaru,
       last_input_at: now,
