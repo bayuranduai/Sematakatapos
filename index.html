@@ -4870,7 +4870,10 @@ async function saveStockInput() {
       const terjualRealtime = calcTerjual(item.name, relevantTxns);
       sisaSaatIni = Math.max(0, existingLog.stok_masuk - terjualRealtime);
     } else {
-      sisaSaatIni = sisaKemarin;
+      // Belum pernah ada log hari ini — tapi mungkin SUDAH ada transaksi hari ini SEBELUM input pertama ini.
+      // Transaksi itu mengurangi sisaKemarin (stok carry-over), harus dihitung dulu sebelum nambah tambahan baru.
+      const terjualSebelumInput = calcTerjual(item.name, dayTxns);
+      sisaSaatIni = Math.max(0, sisaKemarin - terjualSebelumInput);
     }
 
     // Stok baru = sisa real-time yang masih ada + tambahan fisik baru
