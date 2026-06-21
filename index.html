@@ -4660,6 +4660,14 @@ async function renderStock() {
     if (data) yesterdayLogs = data;
   }
 
+  // Transaksi KEMARIN (untuk hitung ulang sisa kemarin secara real-time, bukan baca DB basi)
+  const yesterdayStart = new Date(yesterdayStr + 'T00:00:00' + localTZOffset());
+  const yesterdayEnd   = new Date(yesterdayStr + 'T23:59:59' + localTZOffset());
+  const yesterdayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= yesterdayStart && tt <= yesterdayEnd;
+  });
+
   // Transaksi hari itu
   const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
   const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
@@ -4682,11 +4690,23 @@ async function renderStock() {
     const log = stockLogs.find(l => l.item_id === item.id);
     const yLog = yesterdayLogs.find(l => l.item_id === item.id);
 
-    // Sisa kemarin (ditampilkan sebagai info saja)
-    const sisaKemarin = yLog ? yLog.sisa : 0;
+    // Sisa kemarin DIHITUNG ULANG real-time (bukan baca yLog.sisa yang bisa basi),
+    // sama persis seperti cara renderStock hitung "sisa" untuk hari aktif.
+    let sisaKemarin;
+    if (yLog) {
+      const yCutoff = yLog.last_input_at ? new Date(yLog.last_input_at) : yesterdayStart;
+      const yRelevantTxns = yesterdayTxns.filter(t => {
+        const tt = t.timestamp ? new Date(t.timestamp) : null;
+        return tt && tt >= yCutoff;
+      });
+      const yTerjual = calcTerjual(item.name, yRelevantTxns);
+      sisaKemarin = Math.max(0, yLog.stok_masuk - yTerjual);
+    } else {
+      sisaKemarin = 0;
+    }
 
     // stok_masuk sekarang = TOTAL stok saat terakhir diinput (sudah termasuk sisa kemarin + tambahan)
-    // Kalau belum pernah input hari ini, total stok = sisa kemarin (carry-over otomatis)
+    // Kalau belum pernah input hari ini, total stok = sisa kemarin (carry-over otomatis, real-time)
     const totalStok = log ? log.stok_masuk : sisaKemarin;
     const tambahanTerakhir = log ? (log.stok_masuk - sisaKemarin) : 0;
 
@@ -4786,6 +4806,14 @@ async function saveStockInput() {
   // Load log existing hari ini
   const { data: todayLogs } = await sb.from('stock_logs').select('*').eq('date', dateStr);
 
+  // Transaksi KEMARIN — untuk hitung ulang sisa kemarin secara real-time
+  const yesterdayStart = new Date(yesterdayStr + 'T00:00:00' + localTZOffset());
+  const yesterdayEnd   = new Date(yesterdayStr + 'T23:59:59' + localTZOffset());
+  const yesterdayTxns = transactions.filter(t => {
+    const tt = t.timestamp ? new Date(t.timestamp) : null;
+    return tt && tt >= yesterdayStart && tt <= yesterdayEnd;
+  });
+
   // Transaksi hari ini — dibutuhkan untuk hitung terjual REAL-TIME (sama seperti renderStock)
   const dayStart = new Date(dateStr + 'T00:00:00' + localTZOffset());
   const dayEnd   = new Date(dateStr + 'T23:59:59' + localTZOffset());
@@ -4801,7 +4829,21 @@ async function saveStockInput() {
     if (tambahan <= 0) continue; // skip item yang tidak diisi
 
     const yLog = yLogs ? yLogs.find(l => l.item_id === item.id) : null;
-    const sisaKemarin = yLog ? yLog.sisa : 0;
+
+    // Sisa kemarin DIHITUNG ULANG real-time (bukan baca yLog.sisa yang bisa basi)
+    let sisaKemarin;
+    if (yLog) {
+      const yCutoff = yLog.last_input_at ? new Date(yLog.last_input_at) : yesterdayStart;
+      const yRelevantTxns = yesterdayTxns.filter(t => {
+        const tt = t.timestamp ? new Date(t.timestamp) : null;
+        return tt && tt >= yCutoff;
+      });
+      const yTerjual = calcTerjual(item.name, yRelevantTxns);
+      sisaKemarin = Math.max(0, yLog.stok_masuk - yTerjual);
+    } else {
+      sisaKemarin = 0;
+    }
+
     const existingLog = todayLogs ? todayLogs.find(l => l.item_id === item.id) : null;
 
     // Hitung sisa SAAT INI secara real-time (sama persis logikanya dengan renderStock)
