@@ -4876,17 +4876,11 @@ async function saveStockInput() {
     // Stok baru = sisa real-time yang masih ada + tambahan fisik baru
     const totalStokBaru = sisaSaatIni + tambahan;
 
-    // Akumulasi total_masuk_hari_ini — terus bertambah tiap kali re-stock, TIDAK reset
-    // Fallback: kalau existingLog.total_masuk_hari_ini masih 0 (data lama belum pernah di-set),
-    // pakai existingLog.stok_masuk sebagai basis akumulasi (sama seperti logika di renderStock)
-    let existingTotalMasuk;
-    if (existingLog) {
-      existingTotalMasuk = existingLog.total_masuk_hari_ini > 0
-        ? existingLog.total_masuk_hari_ini
-        : existingLog.stok_masuk; // fallback ke data lama
-    } else {
-      existingTotalMasuk = 0;
-    }
+    // Akumulasi total_masuk_hari_ini — MURNI tambahan saja (TIDAK termasuk sisa kemarin),
+    // supaya formula render (sisaKemarin + total_masuk_hari_ini) tidak dobel hitung.
+    // Fallback: kalau existingLog.total_masuk_hari_ini belum pernah di-set (data lama), anggap 0 —
+    // karena kita tidak tahu pasti berapa "tambahan murni" dari data lama itu.
+    const existingTotalMasuk = existingLog ? (existingLog.total_masuk_hari_ini || 0) : 0;
     const totalMasukHariIniBaru = existingTotalMasuk + tambahan;
 
     await sb.from('stock_logs').upsert({
