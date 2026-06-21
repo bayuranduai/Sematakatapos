@@ -4712,7 +4712,15 @@ async function renderStock() {
 
     // totalMasukHariIni = AKUMULASI semua stok yang pernah masuk hari ini (sisa kemarin + semua re-stock dijumlah)
     // Beda dari totalStok yang reset tiap re-stock — ini terus bertambah, untuk tracking "hari ini total terima berapa"
-    const totalMasukHariIni = log ? (sisaKemarin + (log.total_masuk_hari_ini || 0)) : sisaKemarin;
+    // Fallback: kalau total_masuk_hari_ini belum pernah di-set (data lama / 0), pakai stok_masuk sebagai estimasi terbaik
+    let totalMasukHariIni;
+    if (log) {
+      totalMasukHariIni = log.total_masuk_hari_ini > 0
+        ? sisaKemarin + log.total_masuk_hari_ini
+        : log.stok_masuk; // fallback ke data lama
+    } else {
+      totalMasukHariIni = sisaKemarin;
+    }
 
     // Hanya hitung terjual dari transaksi SETELAH input stok terakhir
     // (transaksi sebelum input sudah "lewat", tidak ngurangi stok baru)
@@ -4869,7 +4877,16 @@ async function saveStockInput() {
     const totalStokBaru = sisaSaatIni + tambahan;
 
     // Akumulasi total_masuk_hari_ini — terus bertambah tiap kali re-stock, TIDAK reset
-    const existingTotalMasuk = existingLog ? (existingLog.total_masuk_hari_ini || 0) : 0;
+    // Fallback: kalau existingLog.total_masuk_hari_ini masih 0 (data lama belum pernah di-set),
+    // pakai existingLog.stok_masuk sebagai basis akumulasi (sama seperti logika di renderStock)
+    let existingTotalMasuk;
+    if (existingLog) {
+      existingTotalMasuk = existingLog.total_masuk_hari_ini > 0
+        ? existingLog.total_masuk_hari_ini
+        : existingLog.stok_masuk; // fallback ke data lama
+    } else {
+      existingTotalMasuk = 0;
+    }
     const totalMasukHariIniBaru = existingTotalMasuk + tambahan;
 
     await sb.from('stock_logs').upsert({
