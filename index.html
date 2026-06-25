@@ -362,13 +362,12 @@
   .k-dot { width: 8px; height: 8px; border-radius: 50%; }
 
   .kitchen-board {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 14px;
-    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
     overflow-y: auto;
     flex: 1;
-    align-content: start;
   }
   .kitchen-board::-webkit-scrollbar { width: 4px; }
   .kitchen-board::-webkit-scrollbar-thumb { background: var(--border); }
@@ -801,13 +800,6 @@
     .settings-sidebar h3 { display: none; }
     .s-nav-btn { padding: 6px 10px; font-size: 12px; }
     .settings-content { padding: 16px; }
-
-    /* Dapur — 1 kolom di HP, tombol lebih besar */
-    .kitchen-board { grid-template-columns: 1fr !important; padding: 10px 12px; }
-    .k-btn { padding: 14px 8px !important; font-size: 14px !important; min-height: 48px !important; }
-    .k-item { font-size: 15px !important; padding: 8px 0 !important; }
-    .k-item-qty { font-size: 16px !important; width: 32px !important; }
-    .k-order-num { font-size: 18px !important; }
   }
   #view-settings { flex-direction: row; overflow: hidden; }
   .settings-sidebar {
