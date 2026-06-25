@@ -1658,11 +1658,11 @@
     </div>
     <div class="s-field">
       <div class="s-label">Nama Kasir</div>
-      <input class="s-input" type="text" id="shift-kasir-name" placeholder="Nama kasir yang bertugas">
+      <input class="s-input" type="text" id="shift-kasir-name" placeholder="Nama kasir yang bertugas" autocomplete="off">
     </div>
     <div class="s-field">
       <div class="s-label">Modal Awal / Uang Kas (Rp)</div>
-      <input class="s-input" type="number" id="shift-modal-awal" placeholder="0">
+      <input class="s-input" type="number" id="shift-modal-awal" placeholder="0" autocomplete="off">
     </div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;font-size:13px;color:var(--text-dim)">
       <input type="checkbox" id="shift-modal-reimbursable" style="width:16px;height:16px;accent-color:var(--amber)">
@@ -1670,7 +1670,7 @@
     </label>
     <div class="s-field">
       <div class="s-label">Catatan (opsional)</div>
-      <input class="s-input" type="text" id="shift-open-note" placeholder="Catatan shift...">
+      <input class="s-input" type="text" id="shift-open-note" placeholder="Catatan shift..." autocomplete="off">
     </div>
     <button class="confirm-btn" style="background:var(--green)" onclick="openShift()">Mulai Shift</button>
   </div>
@@ -1686,11 +1686,11 @@
     <div id="close-shift-summary" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px;font-size:13px"></div>
     <div class="s-field">
       <div class="s-label">Aktual Disetor ke Owner (Rp)</div>
-      <input class="s-input" type="number" id="shift-setoran" placeholder="0" oninput="updateSelisih()">
+      <input class="s-input" type="number" id="shift-setoran" placeholder="0" oninput="updateSelisih()" autocomplete="off">
     </div>
     <div class="s-field">
       <div class="s-label">Catatan Penutupan (opsional)</div>
-      <input class="s-input" type="text" id="shift-close-note" placeholder="Catatan serah terima...">
+      <input class="s-input" type="text" id="shift-close-note" placeholder="Catatan serah terima..." autocomplete="off">
     </div>
     <button class="confirm-btn" style="background:var(--red)" onclick="closeShift()">Tutup & Setor</button>
   </div>
@@ -1706,11 +1706,11 @@
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Catat tambahan modal kas di tengah shift (misal owner kasih tambahan uang belanja)</div>
     <div class="s-field">
       <div class="s-label">Jumlah Tambahan (Rp)</div>
-      <input class="s-input" type="number" id="topup-amount" placeholder="200000">
+      <input class="s-input" type="number" id="topup-amount" placeholder="200000" autocomplete="off">
     </div>
     <div class="s-field">
       <div class="s-label">Catatan (opsional)</div>
-      <input class="s-input" type="text" id="topup-note" placeholder="Contoh: tambahan dari owner">
+      <input class="s-input" type="text" id="topup-note" placeholder="Contoh: tambahan dari owner" autocomplete="off">
     </div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;font-size:13px;color:var(--text-dim)">
       <input type="checkbox" id="topup-reimbursable" style="width:16px;height:16px;accent-color:var(--amber)">
