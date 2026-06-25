@@ -4643,6 +4643,98 @@ function calcTerjual(itemName, txns) {
   return total;
 }
 
+// ══════════════════════════════════════════════
+//  AUTO-CLOSE MISSING STOCK DAYS
+//  Kalau ada hari yang tidak ada row stock_logs-nya (karena tidak ada input stok),
+//  otomatis hitung dan insert berdasarkan data hari sebelumnya + transaksi hari itu.
+// ══════════════════════════════════════════════
+async function autoCloseMissingDays(targetDateStr) {
+  if (!SUPABASE_CONFIGURED || !stockItems.length) return [];
+
+  // Cari row terakhir yang ada untuk setiap item (maks 14 hari ke belakang)
+  const MAX_LOOKBACK = 14;
+  let lastLogs = {};
+  const targetDate = new Date(targetDateStr);
+
+  for (let i = 1; i <= MAX_LOOKBACK; i++) {
+    const checkDate = new Date(targetDate);
+    checkDate.setDate(checkDate.getDate() - (i - 1));
+    const checkDateStr = localDateStr(checkDate);
+
+    const { data } = await sb.from('stock_logs').select('*').eq('date', checkDateStr);
+    if (data && data.length > 0) {
+      data.forEach(log => {
+        if (!lastLogs[log.item_id]) lastLogs[log.item_id] = { log, dateStr: checkDateStr };
+      });
+    }
+    // Stop kalau sudah dapat semua item
+    if (Object.keys(lastLogs).length >= stockItems.length) break;
+  }
+
+  // Untuk setiap item, hitung sisa dari tanggal terakhir ada data sampai targetDateStr
+  const insertRows = [];
+
+  for (const item of stockItems) {
+    const found = lastLogs[item.id];
+    if (!found) continue;
+
+    const lastLog = found.log;
+    const lastDateStr = found.dateStr;
+
+    // Hitung semua hari dari lastDate+1 sampai targetDateStr
+    const lastDate = new Date(lastDateStr);
+    const target = new Date(targetDateStr);
+
+    let currentStokMasuk = lastLog.stok_masuk;
+    let currentDate = new Date(lastDate);
+    currentDate.setDate(currentDate.getDate() + 1);
+
+    while (currentDate <= target) {
+      const currentDateStr = localDateStr(currentDate);
+
+      // Check apakah row sudah ada
+      const { data: existing } = await sb.from('stock_logs').select('id').eq('item_id', item.id).eq('date', currentDateStr).single().catch(() => ({ data: null }));
+      if (existing) {
+        // Row sudah ada, skip
+        currentDate.setDate(currentDate.getDate() + 1);
+        continue;
+      }
+
+      // Hitung transaksi hari itu
+      const dStart = new Date(currentDateStr + 'T00:00:00' + localTZOffset());
+      const dEnd   = new Date(currentDateStr + 'T23:59:59' + localTZOffset());
+      const dTxns  = transactions.filter(t => {
+        const tt = t.timestamp ? new Date(t.timestamp) : null;
+        return tt && tt >= dStart && tt <= dEnd;
+      });
+      const terjual = calcTerjual(item.name, dTxns);
+      const sisa = Math.max(0, currentStokMasuk - terjual);
+
+      // Insert row
+      const { data: inserted } = await sb.from('stock_logs').insert({
+        item_id: item.id, date: currentDateStr,
+        stok_masuk: currentStokMasuk, terjual, sisa,
+        total_masuk_hari_ini: 0,
+        last_input_at: currentDateStr + 'T23:59:59' + localTZOffset(),
+      }).select().single().catch(() => ({ data: null }));
+
+      if (inserted) {
+        console.log(`Auto-closed: ${item.name} ${currentDateStr} sisa=${sisa}`);
+        // Carry-over ke hari berikutnya
+        currentStokMasuk = sisa;
+        if (currentDateStr === targetDateStr) insertRows.push(inserted);
+      }
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  }
+
+  // Return logs untuk targetDateStr
+  if (insertRows.length > 0) return insertRows;
+  const { data: finalLogs } = await sb.from('stock_logs').select('*').eq('date', targetDateStr);
+  return finalLogs || [];
+}
+
 async function renderStock() {
   const dateStr = document.getElementById('stock-date-filter').value || localDateStr();
   document.getElementById('stock-date-filter').value = dateStr;
@@ -4658,6 +4750,11 @@ async function renderStock() {
   if (SUPABASE_CONFIGURED) {
     const { data } = await sb.from('stock_logs').select('*').eq('date', yesterdayStr);
     if (data) yesterdayLogs = data;
+  }
+
+  // Auto-tutup hari yang hilang — kalau yesterdayLogs kosong, otomatis hitung dan insert
+  if (SUPABASE_CONFIGURED && yesterdayLogs.length === 0) {
+    yesterdayLogs = await autoCloseMissingDays(yesterdayStr);
   }
 
   // Transaksi KEMARIN (untuk hitung ulang sisa kemarin secara real-time, bukan baca DB basi)
