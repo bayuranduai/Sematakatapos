@@ -363,11 +363,12 @@
 
   .kitchen-board {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 14px;
     padding: 16px 20px;
     overflow-y: auto;
     flex: 1;
+    align-content: start;
   }
   .kitchen-board::-webkit-scrollbar { width: 4px; }
   .kitchen-board::-webkit-scrollbar-thumb { background: var(--border); }
@@ -377,21 +378,22 @@
     border: 1.5px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
+    min-width: 280px;
   }
   .k-ticket.status-new { border-color: var(--amber); }
   .k-ticket.status-making { border-color: var(--blue); }
   .k-ticket.status-ready { border-color: var(--green); }
 
   .k-ticket-head {
-    padding: 10px 14px;
+    padding: 12px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid var(--border);
   }
-  .k-order-num { font-size: 14px; font-weight: 800; }
-  .k-table { font-size: 11px; color: var(--text-dim); }
-  .k-time { font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+  .k-order-num { font-size: 16px; font-weight: 800; }
+  .k-table { font-size: 12px; color: var(--text-dim); }
+  .k-time { font-size: 12px; font-family: 'JetBrains Mono', monospace; }
   .k-time.urgent { color: var(--red); font-weight: 700; }
 
   .k-status-badge {
@@ -407,27 +409,27 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 0;
+    padding: 6px 0;
     border-bottom: 1px solid var(--border);
-    font-size: 13px;
+    font-size: 14px;
   }
   .k-item:last-child { border-bottom: none; }
   .k-item-qty {
     font-weight: 800; color: var(--amber);
     font-family: 'JetBrains Mono', monospace;
-    width: 22px;
+    width: 28px; font-size: 15px;
   }
-  .k-item-name { flex: 1; }
+  .k-item-name { flex: 1; font-size: 14px; }
   .k-item-done { opacity: .4; text-decoration: line-through; }
 
-  .k-note { padding: 0 14px 10px; font-size: 11px; color: var(--amber-dim); font-style: italic; }
+  .k-note { padding: 0 14px 10px; font-size: 12px; color: var(--amber-dim); font-style: italic; }
 
-  .k-actions { padding: 10px 14px; display: flex; gap: 6px; border-top: 1px solid var(--border); }
+  .k-actions { padding: 10px 14px; display: flex; gap: 8px; border-top: 1px solid var(--border); }
   .k-btn {
-    flex: 1; padding: 8px; border-radius: var(--radius-sm);
+    flex: 1; padding: 12px 8px; border-radius: var(--radius-sm);
     border: 1px solid var(--border); background: transparent;
-    color: var(--text); font-family: inherit; font-size: 12px; font-weight: 600;
-    cursor: pointer; transition: all .13s;
+    color: var(--text); font-family: inherit; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all .13s; min-height: 44px;
   }
   .k-btn:hover { background: var(--surface3); }
   .k-btn.primary { background: var(--amber); border-color: var(--amber); color: #1A0F00; }
@@ -799,6 +801,13 @@
     .settings-sidebar h3 { display: none; }
     .s-nav-btn { padding: 6px 10px; font-size: 12px; }
     .settings-content { padding: 16px; }
+
+    /* Dapur — 1 kolom di HP, tombol lebih besar */
+    .kitchen-board { grid-template-columns: 1fr !important; padding: 10px 12px; }
+    .k-btn { padding: 14px 8px !important; font-size: 14px !important; min-height: 48px !important; }
+    .k-item { font-size: 15px !important; padding: 8px 0 !important; }
+    .k-item-qty { font-size: 16px !important; width: 32px !important; }
+    .k-order-num { font-size: 18px !important; }
   }
   #view-settings { flex-direction: row; overflow: hidden; }
   .settings-sidebar {
@@ -2776,7 +2785,8 @@ async function finishOrder(method) {
 // ═══════════════════════════════════════════════
 function renderKitchen() {
   const board = document.getElementById('kitchen-board');
-  const active = orders.filter(o => o.status !== 'done');
+  const active = orders.filter(o => o.status !== 'done')
+    .sort((a, b) => a.time - b.time); // terlama dulu
   document.getElementById('k-count').textContent = `${active.length} pesanan aktif`;
 
   if (active.length === 0) {
@@ -2784,7 +2794,20 @@ function renderKitchen() {
     return;
   }
 
-  board.innerHTML = active.map(o => {
+  // Batasi tampilan maks 20 pesanan terbaru — kalau lebih, tawari "Selesaikan Semua"
+  const MAX_DISPLAY = 20;
+  const displayed = active.slice(0, MAX_DISPLAY);
+  const overflow = active.length - MAX_DISPLAY;
+
+  let overflowHTML = '';
+  if (overflow > 0) {
+    overflowHTML = `<div style="grid-column:1/-1;background:var(--surface2);border:1px solid var(--amber);border-radius:var(--radius);padding:14px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <span style="color:var(--amber);font-size:13px">⚠️ ${overflow} pesanan lama tidak ditampilkan</span>
+      <button class="k-btn" onclick="markAllDone()" style="background:var(--red);color:#fff;border-color:var(--red)">Selesaikan Semua (${active.length})</button>
+    </div>`;
+  }
+
+  board.innerHTML = overflowHTML + displayed.map(o => {
     const elapsed = Math.floor((Date.now() - o.time) / 60000);
     const urgent = elapsed >= 15;
     return `
@@ -2816,6 +2839,20 @@ function renderKitchen() {
       </div>
     </div>`;
   }).join('');
+}
+
+async function markAllDone() {
+  if (!confirm('Tandai semua pesanan aktif sebagai selesai?')) return;
+  const active = orders.filter(o => o.status !== 'done');
+  for (const o of active) {
+    o.status = 'done';
+    if (o.tableId) delete tableOrders[o.tableId];
+    await dbUpdateOrderStatus(o.id, 'done');
+  }
+  renderKitchen();
+  renderTables();
+  updateKitchenBadge();
+  showToast('Semua pesanan ditandai selesai ✅', 'success');
 }
 
 async function updateOrderStatus(id, status) {
