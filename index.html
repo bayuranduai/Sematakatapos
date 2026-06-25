@@ -2863,7 +2863,7 @@ async function updateOrderStatus(id, status) {
 }
 
 function updateKitchenBadge() {
-  const count = orders.filter(o => o.status === 'new').length;
+  const count = orders.filter(o => o.status !== 'done').length;
   document.getElementById('kitchen-badge').textContent = count;
   document.getElementById('kitchen-badge').style.display = count ? 'inline-block' : 'none';
 }
